@@ -1,13 +1,14 @@
 import { db } from "./db";
 import {
-  users, companies, tasks, contactRequests, appSettings,
+  users, companies, tasks, taskLogs, contactRequests, appSettings,
   type InsertUser, type User,
   type InsertCompany, type Company,
   type InsertTask, type Task,
+  type InsertTaskLog, type TaskLog,
   type InsertContact, type ContactRequest,
   type AppSetting,
 } from "@shared/schema";
-import { eq, desc, count, and } from "drizzle-orm";
+import { eq, desc, count, and, asc } from "drizzle-orm";
 
 export interface IStorage {
   getUser(id: number): Promise<User | undefined>;
@@ -26,6 +27,9 @@ export interface IStorage {
   createTask(task: InsertTask): Promise<Task>;
   updateTask(id: number, updates: Partial<InsertTask>): Promise<Task>;
   deleteTask(id: number): Promise<void>;
+
+  getTaskLogs(taskId: number): Promise<TaskLog[]>;
+  createTaskLog(log: InsertTaskLog): Promise<TaskLog>;
 
   getContacts(): Promise<ContactRequest[]>;
   createContact(contact: InsertContact): Promise<ContactRequest>;
@@ -100,6 +104,14 @@ export class DatabaseStorage implements IStorage {
   }
   async deleteTask(id: number) {
     await db.delete(tasks).where(eq(tasks.id, id));
+  }
+
+  async getTaskLogs(taskId: number) {
+    return db.select().from(taskLogs).where(eq(taskLogs.taskId, taskId)).orderBy(asc(taskLogs.createdAt));
+  }
+  async createTaskLog(log: InsertTaskLog) {
+    const [newLog] = await db.insert(taskLogs).values(log).returning();
+    return newLog;
   }
 
   async getContacts() {

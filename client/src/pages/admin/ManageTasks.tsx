@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { useTasks, useUpdateTask, useDeleteTask, useReviewTask } from "@/hooks/use-tasks";
+import { useState, useRef, useEffect } from "react";
+import { useTasks, useUpdateTask, useDeleteTask, useTaskLogs, useSubmitTask } from "@/hooks/use-tasks";
 import { useCompanies } from "@/hooks/use-companies";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -9,7 +9,12 @@ import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Card, CardContent } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
-import { Pencil, Trash2, Save, Loader2, Sparkles, Star, AlertTriangle, Lightbulb, CheckCircle, ChevronDown, ChevronUp } from "lucide-react";
+import {
+  Pencil, Trash2, Save, Loader2, Sparkles, Star, Send,
+  GitBranch, Image, FileText, ExternalLink, MessageCircle,
+  User, Bot, CheckCircle, XCircle, Clock
+} from "lucide-react";
+import type { TaskLog } from "@shared/schema";
 
 interface TaskForm {
   title: string;
@@ -26,28 +31,16 @@ interface TaskForm {
   companyId: string;
 }
 
-interface AIReview {
-  score: number;
-  strengths: string[];
-  improvements: string[];
-  suggestions: string[];
-  risks: string[];
-  summary: string;
-}
-
 export default function ManageTasks() {
   const { data: tasks = [], isLoading } = useTasks();
   const { data: companies = [] } = useCompanies();
   const updateTask = useUpdateTask();
   const deleteTask = useDeleteTask();
-  const reviewTask = useReviewTask();
   const { toast } = useToast();
 
   const [editTask, setEditTask] = useState<any | null>(null);
   const [form, setForm] = useState<TaskForm>({} as TaskForm);
-  const [review, setReview] = useState<AIReview | null>(null);
-  const [reviewTaskId, setReviewTaskId] = useState<number | null>(null);
-  const [expandedCard, setExpandedCard] = useState<number | null>(null);
+  const [detailTask, setDetailTask] = useState<any | null>(null);
 
   const openEdit = (t: any) => {
     setForm({
@@ -105,22 +98,34 @@ export default function ManageTasks() {
     }
   };
 
-  const handleReview = async (taskId: number) => {
-    setReviewTaskId(taskId);
-    setReview(null);
+  const handleCloseTask = async (task: any) => {
     try {
-      const result = await reviewTask.mutateAsync(taskId);
-      setReview(result);
+      await updateTask.mutateAsync({ id: task.id, status: "completed" });
+      toast({ title: "Task closed." });
+      if (detailTask?.id === task.id) {
+        setDetailTask({ ...detailTask, status: "completed" });
+      }
     } catch {
-      toast({ title: "Failed to get AI review. Check your AI settings.", variant: "destructive" });
-      setReviewTaskId(null);
+      toast({ title: "Failed to close task.", variant: "destructive" });
     }
   };
 
-  const statusColors: Record<string, string> = {
-    backlog: "bg-secondary text-secondary-foreground",
-    in_progress: "bg-blue-500/10 text-blue-600",
-    completed: "bg-emerald-500/10 text-emerald-600",
+  const handleReopenTask = async (task: any) => {
+    try {
+      await updateTask.mutateAsync({ id: task.id, status: "in_progress" });
+      toast({ title: "Task reopened." });
+      if (detailTask?.id === task.id) {
+        setDetailTask({ ...detailTask, status: "in_progress" });
+      }
+    } catch {
+      toast({ title: "Failed to reopen task.", variant: "destructive" });
+    }
+  };
+
+  const statusConfig: Record<string, { color: string; icon: typeof Clock; label: string }> = {
+    backlog: { color: "bg-secondary text-secondary-foreground", icon: Clock, label: "Backlog" },
+    in_progress: { color: "bg-blue-500/10 text-blue-600", icon: MessageCircle, label: "Active" },
+    completed: { color: "bg-emerald-500/10 text-emerald-600", icon: CheckCircle, label: "Closed" },
   };
 
   if (isLoading) {
@@ -131,18 +136,19 @@ export default function ManageTasks() {
     <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
       <div className="mb-8">
         <h1 className="text-3xl font-display font-bold" data-testid="text-manage-tasks">Manage Tasks</h1>
-        <p className="text-muted-foreground mt-1">Edit all task details, update status, and get AI reviews of your work.</p>
+        <p className="text-muted-foreground mt-1">Click any task to open details, submit work, and get AI reviews.</p>
       </div>
 
       <div className="space-y-3">
-        {tasks.map((task: any) => (
-          <Card key={task.id} className="border-border/50" data-testid={`task-row-${task.id}`}>
-            <CardContent className="p-4">
-              <div className="flex items-center justify-between gap-4 flex-wrap">
-                <div className="flex-1 min-w-0 cursor-pointer" onClick={() => setExpandedCard(expandedCard === task.id ? null : task.id)}>
+        {tasks.map((task: any) => {
+          const sc = statusConfig[task.status] || statusConfig.backlog;
+          const StatusIcon = sc.icon;
+          return (
+            <Card key={task.id} className="border-border/50 cursor-pointer card-hover" data-testid={`task-row-${task.id}`} onClick={() => setDetailTask(task)}>
+              <CardContent className="p-4 flex items-center justify-between gap-4 flex-wrap">
+                <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2">
                     <p className="font-display font-bold truncate text-sm">{task.title}</p>
-                    {expandedCard === task.id ? <ChevronUp className="w-4 h-4 text-muted-foreground shrink-0" /> : <ChevronDown className="w-4 h-4 text-muted-foreground shrink-0" />}
                   </div>
                   <div className="flex items-center gap-2 mt-1 flex-wrap">
                     <span className="text-xs text-muted-foreground">{task.requestedBy}</span>
@@ -156,25 +162,11 @@ export default function ManageTasks() {
                     )}
                   </div>
                 </div>
-                <div className="flex items-center gap-2 flex-wrap">
-                  <Badge variant="outline" className={`capitalize text-xs ${statusColors[task.status] || ""}`}>
-                    {task.status?.replace("_", " ")}
+                <div className="flex items-center gap-2 flex-wrap" onClick={e => e.stopPropagation()}>
+                  <Badge variant="outline" className={`capitalize text-xs ${sc.color}`}>
+                    <StatusIcon className="w-3 h-3 mr-1" />
+                    {sc.label}
                   </Badge>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="h-8 px-2 text-xs gap-1"
-                    onClick={() => handleReview(task.id)}
-                    disabled={reviewTask.isPending && reviewTaskId === task.id}
-                    data-testid={`button-review-${task.id}`}
-                  >
-                    {reviewTask.isPending && reviewTaskId === task.id ? (
-                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                    ) : (
-                      <Sparkles className="w-3.5 h-3.5" />
-                    )}
-                    AI Review
-                  </Button>
                   <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => openEdit(task)} data-testid={`button-edit-task-${task.id}`}>
                     <Pencil className="w-3.5 h-3.5" />
                   </Button>
@@ -182,70 +174,21 @@ export default function ManageTasks() {
                     <Trash2 className="w-3.5 h-3.5 text-destructive" />
                   </Button>
                 </div>
-              </div>
-
-              {expandedCard === task.id && (
-                <div className="mt-4 pt-4 border-t border-border/50 space-y-3">
-                  <p className="text-sm text-muted-foreground">{task.description}</p>
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-xs">
-                    <div><span className="text-muted-foreground font-medium">Priority:</span> <span className="capitalize font-semibold">{task.priority}</span></div>
-                    <div><span className="text-muted-foreground font-medium">Role:</span> <span className="font-semibold">{task.recommendedRole || "—"}</span></div>
-                    <div><span className="text-muted-foreground font-medium">GitHub:</span> {task.githubLink ? <a href={task.githubLink} target="_blank" rel="noreferrer" className="text-primary hover:underline">Link</a> : "—"}</div>
-                    <div><span className="text-muted-foreground font-medium">Docs:</span> {task.documentationLink ? <a href={task.documentationLink} target="_blank" rel="noreferrer" className="text-primary hover:underline">Link</a> : "—"}</div>
-                  </div>
-                  {task.solutionNotes && (
-                    <div className="bg-secondary/30 rounded-lg p-3 border border-border/30">
-                      <p className="text-[11px] font-semibold text-muted-foreground mb-1">Solution Notes</p>
-                      <p className="text-xs">{task.solutionNotes}</p>
-                    </div>
-                  )}
-                  {task.architectureNotes && (
-                    <div className="bg-secondary/30 rounded-lg p-3 border border-border/30">
-                      <p className="text-[11px] font-semibold text-muted-foreground mb-1">Architecture Notes</p>
-                      <p className="text-xs">{task.architectureNotes}</p>
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {review && reviewTaskId === task.id && (
-                <div className="mt-4 pt-4 border-t border-border/50" data-testid={`review-result-${task.id}`}>
-                  <div className="flex items-center justify-between mb-3">
-                    <h4 className="text-sm font-display font-bold flex items-center gap-1.5">
-                      <Sparkles className="w-4 h-4 text-primary" /> AI Review
-                    </h4>
-                    <div className="flex items-center gap-1.5">
-                      <Star className="w-4 h-4 text-amber-500 fill-amber-500" />
-                      <span className="text-lg font-display font-bold">{review.score}</span>
-                      <span className="text-sm text-muted-foreground">/10</span>
-                    </div>
-                  </div>
-                  <p className="text-sm text-muted-foreground mb-4">{review.summary}</p>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                    {review.strengths?.length > 0 && (
-                      <ReviewSection icon={<CheckCircle className="w-3.5 h-3.5 text-emerald-500" />} title="Strengths" items={review.strengths} color="bg-emerald-500/5 border-emerald-500/20" />
-                    )}
-                    {review.improvements?.length > 0 && (
-                      <ReviewSection icon={<AlertTriangle className="w-3.5 h-3.5 text-amber-500" />} title="Improvements" items={review.improvements} color="bg-amber-500/5 border-amber-500/20" />
-                    )}
-                    {review.suggestions?.length > 0 && (
-                      <ReviewSection icon={<Lightbulb className="w-3.5 h-3.5 text-blue-500" />} title="Suggestions" items={review.suggestions} color="bg-blue-500/5 border-blue-500/20" />
-                    )}
-                    {review.risks?.length > 0 && (
-                      <ReviewSection icon={<AlertTriangle className="w-3.5 h-3.5 text-red-500" />} title="Risks" items={review.risks} color="bg-red-500/5 border-red-500/20" />
-                    )}
-                  </div>
-                  <div className="mt-3 flex justify-end">
-                    <Button variant="ghost" size="sm" className="text-xs text-muted-foreground" onClick={() => { setReview(null); setReviewTaskId(null); }}>
-                      Dismiss
-                    </Button>
-                  </div>
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        ))}
+              </CardContent>
+            </Card>
+          );
+        })}
       </div>
+
+      {detailTask && (
+        <TaskDetailDialog
+          task={detailTask}
+          companies={companies}
+          onClose={() => setDetailTask(null)}
+          onCloseTask={() => handleCloseTask(detailTask)}
+          onReopenTask={() => handleReopenTask(detailTask)}
+        />
+      )}
 
       <Dialog open={!!editTask} onOpenChange={(open) => !open && setEditTask(null)}>
         <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
@@ -310,7 +253,6 @@ export default function ManageTasks() {
                 </Select>
               </div>
             </div>
-
             <div className="border-t border-border/50 pt-4">
               <p className="text-sm font-semibold mb-3 text-muted-foreground">Work Details</p>
               <div className="space-y-4">
@@ -348,18 +290,296 @@ export default function ManageTasks() {
   );
 }
 
-function ReviewSection({ icon, title, items, color }: { icon: React.ReactNode; title: string; items: string[]; color: string }) {
+function TaskDetailDialog({ task, companies, onClose, onCloseTask, onReopenTask }: {
+  task: any;
+  companies: any[];
+  onClose: () => void;
+  onCloseTask: () => void;
+  onReopenTask: () => void;
+}) {
+  const { data: logs = [], isLoading: logsLoading } = useTaskLogs(task.id);
+  const submitTask = useSubmitTask();
+  const { toast } = useToast();
+  const chatEndRef = useRef<HTMLDivElement>(null);
+
+  const [submissionContent, setSubmissionContent] = useState("");
+  const [submissionGithub, setSubmissionGithub] = useState("");
+  const [submissionScreenshot, setSubmissionScreenshot] = useState("");
+  const [submissionFile, setSubmissionFile] = useState("");
+  const [showAttachments, setShowAttachments] = useState(false);
+
+  const companyName = task.companyId ? companies.find((c: any) => c.id === task.companyId)?.name : null;
+
+  useEffect(() => {
+    chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [logs]);
+
+  const handleSubmit = async () => {
+    if (!submissionContent.trim()) {
+      toast({ title: "Please describe your work.", variant: "destructive" });
+      return;
+    }
+    try {
+      await submitTask.mutateAsync({
+        id: task.id,
+        content: submissionContent,
+        ...(submissionGithub ? { githubLink: submissionGithub } : {}),
+        ...(submissionScreenshot ? { screenshotUrl: submissionScreenshot } : {}),
+        ...(submissionFile ? { fileUrl: submissionFile } : {}),
+      });
+      setSubmissionContent("");
+      setSubmissionGithub("");
+      setSubmissionScreenshot("");
+      setSubmissionFile("");
+      setShowAttachments(false);
+    } catch {
+      toast({ title: "Failed to submit. Check your AI settings.", variant: "destructive" });
+    }
+  };
+
   return (
-    <div className={`rounded-lg border p-3 ${color}`}>
-      <p className="text-xs font-semibold flex items-center gap-1.5 mb-2">{icon} {title}</p>
-      <ul className="space-y-1">
-        {items.map((item, i) => (
-          <li key={i} className="text-xs text-foreground/80 flex gap-1.5">
-            <span className="text-muted-foreground shrink-0 mt-0.5">-</span>
-            {item}
-          </li>
-        ))}
-      </ul>
+    <Dialog open={true} onOpenChange={(open) => !open && onClose()}>
+      <DialogContent className="sm:max-w-3xl max-h-[90vh] flex flex-col p-0 gap-0">
+        <div className="p-6 pb-4 border-b border-border/50">
+          <div className="flex items-start justify-between gap-3">
+            <div className="flex-1 min-w-0">
+              <DialogHeader>
+                <DialogTitle className="font-display text-lg pr-8" data-testid="detail-task-title">{task.title}</DialogTitle>
+              </DialogHeader>
+              <div className="flex items-center gap-2 mt-2 flex-wrap">
+                {companyName && <Badge variant="outline" className="text-xs">{companyName}</Badge>}
+                <Badge variant="outline" className="text-xs">{task.projectArea}</Badge>
+                <Badge variant="outline" className="text-xs capitalize">{task.priority}</Badge>
+                <Badge variant="outline" className={`text-xs ${task.status === "completed" ? "bg-emerald-500/10 text-emerald-600 border-emerald-500/20" : task.status === "in_progress" ? "bg-blue-500/10 text-blue-600 border-blue-500/20" : ""}`}>
+                  {task.status === "completed" ? "Closed" : task.status === "in_progress" ? "Active" : "Backlog"}
+                </Badge>
+              </div>
+            </div>
+            <div className="flex gap-2 shrink-0">
+              {task.status !== "completed" ? (
+                <Button variant="outline" size="sm" className="text-xs gap-1" onClick={onCloseTask} data-testid="button-close-task">
+                  <CheckCircle className="w-3.5 h-3.5" /> Close Task
+                </Button>
+              ) : (
+                <Button variant="outline" size="sm" className="text-xs gap-1" onClick={onReopenTask} data-testid="button-reopen-task">
+                  <XCircle className="w-3.5 h-3.5" /> Reopen
+                </Button>
+              )}
+            </div>
+          </div>
+          <p className="text-sm text-muted-foreground mt-3">{task.description}</p>
+          <div className="flex items-center gap-3 mt-3 text-xs text-muted-foreground flex-wrap">
+            <span>By: <span className="font-medium text-foreground">{task.requestedBy}</span></span>
+            {task.recommendedRole && <span>Role: <span className="font-medium text-foreground">{task.recommendedRole}</span></span>}
+            {task.githubLink && (
+              <a href={task.githubLink} target="_blank" rel="noreferrer" className="text-primary hover:underline flex items-center gap-1">
+                <GitBranch className="w-3 h-3" /> GitHub
+              </a>
+            )}
+            {task.documentationLink && (
+              <a href={task.documentationLink} target="_blank" rel="noreferrer" className="text-primary hover:underline flex items-center gap-1">
+                <ExternalLink className="w-3 h-3" /> Docs
+              </a>
+            )}
+          </div>
+        </div>
+
+        <div className="flex-1 overflow-y-auto p-6 space-y-4 min-h-[200px] max-h-[400px]" data-testid="conversation-log">
+          {logsLoading && (
+            <div className="flex justify-center py-8">
+              <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
+            </div>
+          )}
+          {!logsLoading && logs.length === 0 && (
+            <div className="text-center py-10 text-muted-foreground">
+              <MessageCircle className="w-10 h-10 mx-auto mb-3 opacity-30" />
+              <p className="text-sm font-medium">No submissions yet</p>
+              <p className="text-xs mt-1">Submit your work below to start an AI review conversation.</p>
+            </div>
+          )}
+          {logs.map((log: TaskLog) => (
+            <LogEntry key={log.id} log={log} />
+          ))}
+          <div ref={chatEndRef} />
+        </div>
+
+        {task.status !== "completed" && (
+          <div className="border-t border-border/50 p-4 bg-card/50" data-testid="submission-area">
+            <div className="space-y-3">
+              <Textarea
+                value={submissionContent}
+                onChange={e => setSubmissionContent(e.target.value)}
+                placeholder="Describe your work, solution approach, or ask for guidance..."
+                rows={3}
+                className="resize-none"
+                data-testid="input-submission-content"
+              />
+
+              {showAttachments && (
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                  <div className="flex items-center gap-1.5">
+                    <GitBranch className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+                    <Input
+                      value={submissionGithub}
+                      onChange={e => setSubmissionGithub(e.target.value)}
+                      placeholder="GitHub link..."
+                      className="h-8 text-xs"
+                      data-testid="input-submission-github"
+                    />
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <Image className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+                    <Input
+                      value={submissionScreenshot}
+                      onChange={e => setSubmissionScreenshot(e.target.value)}
+                      placeholder="Screenshot URL..."
+                      className="h-8 text-xs"
+                      data-testid="input-submission-screenshot"
+                    />
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <FileText className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+                    <Input
+                      value={submissionFile}
+                      onChange={e => setSubmissionFile(e.target.value)}
+                      placeholder="File URL..."
+                      className="h-8 text-xs"
+                      data-testid="input-submission-file"
+                    />
+                  </div>
+                </div>
+              )}
+
+              <div className="flex items-center justify-between gap-2">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="text-xs text-muted-foreground gap-1"
+                  onClick={() => setShowAttachments(!showAttachments)}
+                  data-testid="button-toggle-attachments"
+                >
+                  <GitBranch className="w-3 h-3" />
+                  {showAttachments ? "Hide attachments" : "Add links / files"}
+                </Button>
+                <Button
+                  size="sm"
+                  className="gap-1.5"
+                  onClick={handleSubmit}
+                  disabled={submitTask.isPending || !submissionContent.trim()}
+                  data-testid="button-submit-review"
+                >
+                  {submitTask.isPending ? (
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  ) : (
+                    <Send className="w-3.5 h-3.5" />
+                  )}
+                  Submit for AI Review
+                </Button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {task.status === "completed" && (
+          <div className="border-t border-border/50 p-4 bg-emerald-500/5 text-center">
+            <p className="text-sm text-emerald-600 font-medium flex items-center justify-center gap-1.5">
+              <CheckCircle className="w-4 h-4" /> This task is closed
+            </p>
+          </div>
+        )}
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function LogEntry({ log }: { log: TaskLog }) {
+  const isUser = log.role === "user";
+  const timestamp = new Date(log.createdAt).toLocaleString();
+  let attachments: Record<string, string> = {};
+  if (log.attachments) {
+    try { attachments = JSON.parse(log.attachments); } catch {}
+  }
+
+  if (isUser) {
+    return (
+      <div className="flex gap-3" data-testid={`log-entry-${log.id}`}>
+        <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center shrink-0 mt-0.5">
+          <User className="w-4 h-4 text-primary" />
+        </div>
+        <div className="flex-1">
+          <div className="flex items-center gap-2 mb-1">
+            <span className="text-xs font-semibold">You</span>
+            <span className="text-[10px] text-muted-foreground">{timestamp}</span>
+          </div>
+          <div className="bg-primary/5 border border-primary/10 rounded-lg p-3">
+            <p className="text-sm whitespace-pre-wrap">{log.content}</p>
+            {Object.keys(attachments).length > 0 && (
+              <div className="flex items-center gap-3 mt-2 pt-2 border-t border-primary/10 flex-wrap">
+                {attachments.githubLink && (
+                  <a href={attachments.githubLink} target="_blank" rel="noreferrer" className="text-xs text-primary hover:underline flex items-center gap-1">
+                    <GitBranch className="w-3 h-3" /> GitHub
+                  </a>
+                )}
+                {attachments.screenshotUrl && (
+                  <a href={attachments.screenshotUrl} target="_blank" rel="noreferrer" className="text-xs text-primary hover:underline flex items-center gap-1">
+                    <Image className="w-3 h-3" /> Screenshot
+                  </a>
+                )}
+                {attachments.fileUrl && (
+                  <a href={attachments.fileUrl} target="_blank" rel="noreferrer" className="text-xs text-primary hover:underline flex items-center gap-1">
+                    <FileText className="w-3 h-3" /> File
+                  </a>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  let aiData: any = {};
+  try { aiData = JSON.parse(log.content); } catch { aiData = { feedback: log.content }; }
+
+  return (
+    <div className="flex gap-3" data-testid={`log-entry-${log.id}`}>
+      <div className="w-8 h-8 rounded-full bg-purple-500/10 flex items-center justify-center shrink-0 mt-0.5">
+        <Bot className="w-4 h-4 text-purple-500" />
+      </div>
+      <div className="flex-1">
+        <div className="flex items-center gap-2 mb-1">
+          <span className="text-xs font-semibold">AI Reviewer</span>
+          <span className="text-[10px] text-muted-foreground">{timestamp}</span>
+          {aiData.score !== undefined && (
+            <span className="flex items-center gap-0.5 text-xs">
+              <Star className="w-3 h-3 text-amber-500 fill-amber-500" />
+              <span className="font-bold">{aiData.score}</span>
+              <span className="text-muted-foreground">/10</span>
+            </span>
+          )}
+          {aiData.readyToClose && (
+            <Badge variant="outline" className="text-[10px] bg-emerald-500/10 text-emerald-600 border-emerald-500/20">Ready to close</Badge>
+          )}
+        </div>
+        <div className="bg-secondary/50 border border-border/50 rounded-lg p-3">
+          <p className="text-sm whitespace-pre-wrap">{aiData.feedback || aiData.summary || log.content}</p>
+          {aiData.actionItems?.length > 0 && (
+            <div className="mt-3 pt-2 border-t border-border/50">
+              <p className="text-[11px] font-semibold text-muted-foreground mb-1.5 flex items-center gap-1">
+                <Sparkles className="w-3 h-3" /> Action Items
+              </p>
+              <ul className="space-y-1">
+                {aiData.actionItems.map((item: string, i: number) => (
+                  <li key={i} className="text-xs text-foreground/80 flex gap-1.5">
+                    <span className="text-muted-foreground shrink-0">-</span>
+                    {item}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   );
 }

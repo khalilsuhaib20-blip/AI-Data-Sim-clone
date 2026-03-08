@@ -79,16 +79,37 @@ export function useGenerateTask() {
   });
 }
 
-export function useReviewTask() {
+export function useTaskLogs(taskId: number | null) {
+  const { token } = useAuth();
+  return useQuery({
+    queryKey: ["/api/tasks", taskId, "logs"],
+    queryFn: async () => {
+      const res = await fetch(`/api/tasks/${taskId}/logs`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) throw new Error("Failed to fetch logs");
+      return res.json();
+    },
+    enabled: !!taskId,
+  });
+}
+
+export function useSubmitTask() {
+  const queryClient = useQueryClient();
   const { token } = useAuth();
   return useMutation({
-    mutationFn: async (id: number) => {
-      const res = await fetch(`/api/tasks/${id}/review`, {
+    mutationFn: async ({ id, ...data }: { id: number; content: string; githubLink?: string; screenshotUrl?: string; fileUrl?: string }) => {
+      const res = await fetch(`/api/tasks/${id}/submit`, {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify(data),
       });
-      if (!res.ok) throw new Error("Failed to review task");
+      if (!res.ok) throw new Error("Failed to submit");
       return res.json();
+    },
+    onSuccess: (_data, variables) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/tasks", variables.id, "logs"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/tasks"] });
     },
   });
 }

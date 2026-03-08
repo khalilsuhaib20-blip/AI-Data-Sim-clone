@@ -281,11 +281,37 @@ title, description, requestedBy, priority (low/medium/high/urgent), projectArea 
     }
   });
 
-  // ========== AI REVIEW ==========
-  app.post("/api/tasks/:id/review", requireAuth, requireAdmin, async (req, res) => {
+  // ========== TASK LOGS & AI REVIEW ==========
+  app.get("/api/tasks/:id/logs", requireAuth, requireAdmin, async (req, res) => {
+    const logs = await storage.getTaskLogs(Number(req.params.id));
+    res.json(logs);
+  });
+
+  app.post("/api/tasks/:id/submit", requireAuth, requireAdmin, async (req, res) => {
     try {
-      const task = await storage.getTask(Number(req.params.id));
+      const taskId = Number(req.params.id);
+      const task = await storage.getTask(taskId);
       if (!task) return res.status(404).json({ message: "Task not found" });
+
+      const inputSchema = z.object({
+        content: z.string().min(1),
+        githubLink: z.string().optional(),
+        screenshotUrl: z.string().optional(),
+        fileUrl: z.string().optional(),
+      });
+      const input = inputSchema.parse(req.body);
+
+      const attachments: Record<string, string> = {};
+      if (input.githubLink) attachments.githubLink = input.githubLink;
+      if (input.screenshotUrl) attachments.screenshotUrl = input.screenshotUrl;
+      if (input.fileUrl) attachments.fileUrl = input.fileUrl;
+
+      const userLog = await storage.createTaskLog({
+        taskId,
+        role: "user",
+        content: input.content,
+        attachments: Object.keys(attachments).length > 0 ? JSON.stringify(attachments) : null,
+      });
 
       let companyContext = "";
       if (task.companyId) {
@@ -293,57 +319,84 @@ title, description, requestedBy, priority (low/medium/high/urgent), projectArea 
         if (company) companyContext = `Company: ${company.name} (${company.industry})\n`;
       }
 
+      const previousLogs = await storage.getTaskLogs(taskId);
+      const conversationHistory = previousLogs.map(log => {
+        if (log.role === "user") {
+          let msg = log.content;
+          if (log.attachments) {
+            try {
+              const att = JSON.parse(log.attachments);
+              const links = [];
+              if (att.githubLink) links.push(`GitHub: ${att.githubLink}`);
+              if (att.screenshotUrl) links.push(`Screenshot: ${att.screenshotUrl}`);
+              if (att.fileUrl) links.push(`File: ${att.fileUrl}`);
+              if (links.length) msg += "\n\nAttached: " + links.join(", ");
+            } catch {}
+          }
+          return { role: "user" as const, content: msg };
+        }
+        let aiContent = log.content;
+        try {
+          const parsed = JSON.parse(log.content);
+          aiContent = parsed.feedback || parsed.summary || log.content;
+        } catch {}
+        return { role: "assistant" as const, content: aiContent };
+      });
+
       const openai = await getOpenAIClient();
       const model = await getAIModel();
       const response = await openai.chat.completions.create({
         model,
-        messages: [{
-          role: "system",
-          content: `You are a senior data engineering reviewer. Evaluate the following task and the work done on it. Provide:
-1. A quality score (1-10)
-2. Strengths of the solution
-3. Areas for improvement
-4. Suggestions for next steps
-5. Any potential issues or risks
+        messages: [
+          {
+            role: "system",
+            content: `You are a senior data engineering reviewer working with a developer on this task:
 
-Be specific and constructive. Format your response as JSON with keys: score, strengths (array), improvements (array), suggestions (array), risks (array), summary (string).`
-        }, {
-          role: "user",
-          content: `${companyContext}Task: ${task.title}
+${companyContext}Task: ${task.title}
 Description: ${task.description}
-Status: ${task.status}
 Project Area: ${task.projectArea}
-Requested By: ${task.requestedBy}
 Priority: ${task.priority}
-${task.solutionNotes ? `Solution Notes: ${task.solutionNotes}` : "No solution notes provided yet."}
-${task.architectureNotes ? `Architecture Notes: ${task.architectureNotes}` : ""}
-${task.githubLink ? `GitHub: ${task.githubLink}` : ""}
-${task.documentationLink ? `Docs: ${task.documentationLink}` : ""}`
-        }],
+Current Status: ${task.status}
+
+Review the developer's submission and previous conversation. Provide constructive feedback in a conversational tone. Include:
+- Assessment of the work submitted
+- Specific strengths and areas for improvement
+- Actionable suggestions for next steps
+- Whether the task looks ready to close or needs more work
+
+Respond as JSON with keys: feedback (string - your conversational review), score (number 1-10), readyToClose (boolean - whether the task seems complete), actionItems (array of strings - specific next steps).`
+          },
+          ...conversationHistory,
+        ],
         response_format: { type: "json_object" },
       });
 
       const content = response.choices[0]?.message?.content;
-      if (!content) throw new Error("Failed to get review");
-      let review;
+      if (!content) throw new Error("Failed to get AI review");
+
+      let aiReview;
       try {
-        review = JSON.parse(content);
+        aiReview = JSON.parse(content);
       } catch {
-        review = { score: 0, strengths: [], improvements: [], suggestions: [], risks: [], summary: content };
+        aiReview = { feedback: content, score: 0, readyToClose: false, actionItems: [] };
       }
-      const reviewSchema = z.object({
-        score: z.number().min(0).max(10).default(0),
-        strengths: z.array(z.string()).default([]),
-        improvements: z.array(z.string()).default([]),
-        suggestions: z.array(z.string()).default([]),
-        risks: z.array(z.string()).default([]),
-        summary: z.string().default("Review completed."),
+
+      const aiLog = await storage.createTaskLog({
+        taskId,
+        role: "ai",
+        content: JSON.stringify(aiReview),
+        attachments: null,
       });
-      const validated = reviewSchema.safeParse(review);
-      res.json(validated.success ? validated.data : review);
+
+      if (task.status === "backlog") {
+        await storage.updateTask(taskId, { status: "in_progress" });
+      }
+
+      res.json({ userLog, aiLog, review: aiReview });
     } catch (error) {
-      console.error("Error reviewing task:", error);
-      res.status(500).json({ message: "Failed to review task" });
+      console.error("Error submitting task:", error);
+      if (error instanceof z.ZodError) return res.status(400).json({ message: error.errors[0].message });
+      res.status(500).json({ message: "Failed to submit for review" });
     }
   });
 

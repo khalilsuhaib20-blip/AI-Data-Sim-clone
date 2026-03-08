@@ -39,6 +39,15 @@ export const tasks = pgTable("tasks", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
+export const taskLogs = pgTable("task_logs", {
+  id: serial("id").primaryKey(),
+  taskId: integer("task_id").notNull(),
+  role: varchar("role", { length: 20 }).notNull(),
+  content: text("content").notNull(),
+  attachments: text("attachments"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
 export const contactRequests = pgTable("contact_requests", {
   id: serial("id").primaryKey(),
   name: text("name").notNull(),
@@ -59,6 +68,7 @@ export const appSettings = pgTable("app_settings", {
 export const insertUserSchema = createInsertSchema(users).omit({ id: true, createdAt: true });
 export const insertCompanySchema = createInsertSchema(companies).omit({ id: true, createdAt: true });
 export const insertTaskSchema = createInsertSchema(tasks).omit({ id: true, createdAt: true });
+export const insertTaskLogSchema = createInsertSchema(taskLogs).omit({ id: true, createdAt: true });
 export const insertContactSchema = createInsertSchema(contactRequests).omit({ id: true, createdAt: true });
 
 export type User = typeof users.$inferSelect;
@@ -67,6 +77,8 @@ export type Company = typeof companies.$inferSelect;
 export type InsertCompany = z.infer<typeof insertCompanySchema>;
 export type Task = typeof tasks.$inferSelect;
 export type InsertTask = z.infer<typeof insertTaskSchema>;
+export type TaskLog = typeof taskLogs.$inferSelect;
+export type InsertTaskLog = z.infer<typeof insertTaskLogSchema>;
 export type ContactRequest = typeof contactRequests.$inferSelect;
 export type InsertContact = z.infer<typeof insertContactSchema>;
 export type AppSetting = typeof appSettings.$inferSelect;

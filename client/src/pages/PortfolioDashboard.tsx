@@ -106,7 +106,14 @@ export default function PortfolioDashboard() {
                   <Building2 className="w-6 h-6 text-primary" />
                 </div>
                 <div>
-                  <h1 className="text-2xl font-display font-bold" data-testid="text-project-name">{selectedProjectData.name}</h1>
+                  <div className="flex items-center gap-3">
+                    <h1 className="text-2xl font-display font-bold" data-testid="text-project-name">{selectedProjectData.name}</h1>
+                    {selectedProjectData.githubLink && (
+                      <a href={selectedProjectData.githubLink} target="_blank" rel="noreferrer" className="text-muted-foreground hover:text-primary transition-colors" data-testid="project-detail-github">
+                        <GitBranch className="w-5 h-5" />
+                      </a>
+                    )}
+                  </div>
                   <div className="flex items-center gap-2 mt-1 flex-wrap">
                     <span className="text-sm text-muted-foreground font-medium">{selectedProjectData.industry}</span>
                     <Badge variant={selectedProjectData.status === "active" ? "default" : "secondary"} className="capitalize text-xs">{selectedProjectData.status}</Badge>
@@ -161,7 +168,21 @@ export default function PortfolioDashboard() {
                 <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center shrink-0">
                   <Building2 className="w-5 h-5 text-primary" />
                 </div>
-                <Badge variant={project.status === "active" ? "default" : "secondary"} className="capitalize text-xs">{project.status}</Badge>
+                <div className="flex items-center gap-2">
+                  {project.githubLink && (
+                    <a
+                      href={project.githubLink}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-muted-foreground hover:text-primary transition-colors"
+                      onClick={e => e.stopPropagation()}
+                      data-testid={`project-github-${project.id}`}
+                    >
+                      <GitBranch className="w-4 h-4" />
+                    </a>
+                  )}
+                  <Badge variant={project.status === "active" ? "default" : "secondary"} className="capitalize text-xs">{project.status}</Badge>
+                </div>
               </div>
 
               <h3 className="font-display font-bold text-lg mb-1 group-hover:text-primary transition-colors" data-testid={`project-name-${project.id}`}>

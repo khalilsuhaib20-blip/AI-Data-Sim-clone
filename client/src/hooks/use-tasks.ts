@@ -79,6 +79,20 @@ export function useGenerateTask() {
   });
 }
 
+export function useReviewTask() {
+  const { token } = useAuth();
+  return useMutation({
+    mutationFn: async (id: number) => {
+      const res = await fetch(`/api/tasks/${id}/review`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) throw new Error("Failed to review task");
+      return res.json();
+    },
+  });
+}
+
 export function useDeleteTask() {
   const queryClient = useQueryClient();
   const { token } = useAuth();

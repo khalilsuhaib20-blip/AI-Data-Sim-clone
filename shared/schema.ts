@@ -18,6 +18,7 @@ export const companies = pgTable("companies", {
   status: varchar("status", { length: 50 }).notNull().default("active"),
   startDate: text("start_date"),
   endDate: text("end_date"),
+  githubLink: text("github_link"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 

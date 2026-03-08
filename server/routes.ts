@@ -281,6 +281,72 @@ title, description, requestedBy, priority (low/medium/high/urgent), projectArea 
     }
   });
 
+  // ========== AI REVIEW ==========
+  app.post("/api/tasks/:id/review", requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const task = await storage.getTask(Number(req.params.id));
+      if (!task) return res.status(404).json({ message: "Task not found" });
+
+      let companyContext = "";
+      if (task.companyId) {
+        const company = await storage.getCompany(task.companyId);
+        if (company) companyContext = `Company: ${company.name} (${company.industry})\n`;
+      }
+
+      const openai = await getOpenAIClient();
+      const model = await getAIModel();
+      const response = await openai.chat.completions.create({
+        model,
+        messages: [{
+          role: "system",
+          content: `You are a senior data engineering reviewer. Evaluate the following task and the work done on it. Provide:
+1. A quality score (1-10)
+2. Strengths of the solution
+3. Areas for improvement
+4. Suggestions for next steps
+5. Any potential issues or risks
+
+Be specific and constructive. Format your response as JSON with keys: score, strengths (array), improvements (array), suggestions (array), risks (array), summary (string).`
+        }, {
+          role: "user",
+          content: `${companyContext}Task: ${task.title}
+Description: ${task.description}
+Status: ${task.status}
+Project Area: ${task.projectArea}
+Requested By: ${task.requestedBy}
+Priority: ${task.priority}
+${task.solutionNotes ? `Solution Notes: ${task.solutionNotes}` : "No solution notes provided yet."}
+${task.architectureNotes ? `Architecture Notes: ${task.architectureNotes}` : ""}
+${task.githubLink ? `GitHub: ${task.githubLink}` : ""}
+${task.documentationLink ? `Docs: ${task.documentationLink}` : ""}`
+        }],
+        response_format: { type: "json_object" },
+      });
+
+      const content = response.choices[0]?.message?.content;
+      if (!content) throw new Error("Failed to get review");
+      let review;
+      try {
+        review = JSON.parse(content);
+      } catch {
+        review = { score: 0, strengths: [], improvements: [], suggestions: [], risks: [], summary: content };
+      }
+      const reviewSchema = z.object({
+        score: z.number().min(0).max(10).default(0),
+        strengths: z.array(z.string()).default([]),
+        improvements: z.array(z.string()).default([]),
+        suggestions: z.array(z.string()).default([]),
+        risks: z.array(z.string()).default([]),
+        summary: z.string().default("Review completed."),
+      });
+      const validated = reviewSchema.safeParse(review);
+      res.json(validated.success ? validated.data : review);
+    } catch (error) {
+      console.error("Error reviewing task:", error);
+      res.status(500).json({ message: "Failed to review task" });
+    }
+  });
+
   // ========== CONTACTS ==========
   app.get(api.contacts.list.path, requireAuth, requireAdmin, async (_req, res) => {
     const contacts = await storage.getContacts();

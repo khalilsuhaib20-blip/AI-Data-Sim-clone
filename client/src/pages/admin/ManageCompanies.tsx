@@ -8,7 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Card, CardContent } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
-import { Plus, Pencil, Trash2, Building2, Loader2 } from "lucide-react";
+import { Plus, Pencil, Trash2, Building2, Loader2, GitBranch } from "lucide-react";
 
 interface CompanyForm {
   name: string;
@@ -17,9 +17,10 @@ interface CompanyForm {
   status: string;
   startDate: string;
   endDate: string;
+  githubLink: string;
 }
 
-const emptyForm: CompanyForm = { name: "", industry: "", description: "", status: "active", startDate: "", endDate: "" };
+const emptyForm: CompanyForm = { name: "", industry: "", description: "", status: "active", startDate: "", endDate: "", githubLink: "" };
 
 export default function ManageCompanies() {
   const { data: companies = [], isLoading } = useCompanies();
@@ -34,7 +35,7 @@ export default function ManageCompanies() {
 
   const openCreate = () => { setForm(emptyForm); setEditId(null); setIsOpen(true); };
   const openEdit = (c: any) => {
-    setForm({ name: c.name, industry: c.industry, description: c.description, status: c.status, startDate: c.startDate || "", endDate: c.endDate || "" });
+    setForm({ name: c.name, industry: c.industry, description: c.description, status: c.status, startDate: c.startDate || "", endDate: c.endDate || "", githubLink: c.githubLink || "" });
     setEditId(c.id); setIsOpen(true);
   };
 
@@ -44,7 +45,7 @@ export default function ManageCompanies() {
       return;
     }
     try {
-      const data = { ...form, startDate: form.startDate || null, endDate: form.endDate || null };
+      const data = { ...form, startDate: form.startDate || null, endDate: form.endDate || null, githubLink: form.githubLink || null };
       if (editId) {
         await updateCompany.mutateAsync({ id: editId, ...data });
         toast({ title: "Company updated." });
@@ -95,7 +96,14 @@ export default function ManageCompanies() {
                   <Building2 className="w-5 h-5 text-primary" />
                 </div>
                 <div className="min-w-0">
-                  <p className="font-display font-bold truncate">{c.name}</p>
+                  <div className="flex items-center gap-2">
+                    <p className="font-display font-bold truncate">{c.name}</p>
+                    {c.githubLink && (
+                      <a href={c.githubLink} target="_blank" rel="noreferrer" className="text-muted-foreground hover:text-primary" data-testid={`link-github-${c.id}`}>
+                        <GitBranch className="w-4 h-4" />
+                      </a>
+                    )}
+                  </div>
                   <p className="text-sm text-muted-foreground">{c.industry}</p>
                 </div>
               </div>
@@ -114,7 +122,7 @@ export default function ManageCompanies() {
       </div>
 
       <Dialog open={isOpen} onOpenChange={setIsOpen}>
-        <DialogContent className="sm:max-w-lg">
+        <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="font-display">{editId ? "Edit Company" : "New Company"}</DialogTitle>
           </DialogHeader>
@@ -142,14 +150,18 @@ export default function ManageCompanies() {
                 </SelectContent>
               </Select>
             </div>
+            <div className="space-y-2">
+              <label className="text-sm font-semibold">GitHub Link</label>
+              <Input value={form.githubLink} onChange={e => setForm(f => ({ ...f, githubLink: e.target.value }))} placeholder="https://github.com/..." data-testid="input-github-link" />
+            </div>
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
                 <label className="text-sm font-medium text-muted-foreground">Start Date</label>
-                <Input type="date" value={form.startDate} onChange={e => setForm(f => ({ ...f, startDate: e.target.value }))} />
+                <Input type="date" value={form.startDate} onChange={e => setForm(f => ({ ...f, startDate: e.target.value }))} data-testid="input-start-date" />
               </div>
               <div className="space-y-2">
                 <label className="text-sm font-medium text-muted-foreground">End Date</label>
-                <Input type="date" value={form.endDate} onChange={e => setForm(f => ({ ...f, endDate: e.target.value }))} />
+                <Input type="date" value={form.endDate} onChange={e => setForm(f => ({ ...f, endDate: e.target.value }))} data-testid="input-end-date" />
               </div>
             </div>
           </div>

@@ -126,10 +126,10 @@ export default function ManageTasks() {
             </div>
             <div className="space-y-2">
               <label className="text-sm font-semibold">Company</label>
-              <Select value={form.companyId} onValueChange={v => setForm((f: any) => ({ ...f, companyId: v }))}>
+              <Select value={form.companyId || "none"} onValueChange={v => setForm((f: any) => ({ ...f, companyId: v === "none" ? "" : v }))}>
                 <SelectTrigger><SelectValue placeholder="Select company" /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">None</SelectItem>
+                  <SelectItem value="none">None</SelectItem>
                   {companies.map((c: any) => (
                     <SelectItem key={c.id} value={c.id.toString()}>{c.name}</SelectItem>
                   ))}

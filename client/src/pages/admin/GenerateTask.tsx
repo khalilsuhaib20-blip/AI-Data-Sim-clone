@@ -39,10 +39,10 @@ export default function GenerateTask() {
         <CardContent className="p-6 space-y-6">
           <div className="space-y-2">
             <label className="text-sm font-semibold">Select Company (optional)</label>
-            <Select value={companyId} onValueChange={setCompanyId}>
+            <Select value={companyId || "none"} onValueChange={v => setCompanyId(v === "none" ? "" : v)}>
               <SelectTrigger data-testid="select-company"><SelectValue placeholder="All companies" /></SelectTrigger>
               <SelectContent>
-                <SelectItem value="">Any company</SelectItem>
+                <SelectItem value="none">Any company</SelectItem>
                 {companies.map((c: any) => (
                   <SelectItem key={c.id} value={c.id.toString()}>{c.name} ({c.industry})</SelectItem>
                 ))}

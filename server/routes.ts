@@ -1,10 +1,36 @@
+import express from "express";
 import type { Express } from "express";
 import type { Server } from "http";
 import { storage } from "./storage";
 import { api } from "@shared/routes";
 import { z } from "zod";
 import OpenAI from "openai";
+import multer from "multer";
+import path from "path";
+import fs from "fs";
 import { generateToken, comparePassword, requireAuth, requireAdmin, seedAdminUser } from "./auth";
+
+const uploadsDir = path.join(process.cwd(), "uploads");
+if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
+
+const upload = multer({
+  storage: multer.diskStorage({
+    destination: (_req, _file, cb) => cb(null, uploadsDir),
+    filename: (_req, file, cb) => {
+      const uniqueName = `${Date.now()}-${Math.random().toString(36).slice(2)}${path.extname(file.originalname)}`;
+      cb(null, uniqueName);
+    },
+  }),
+  limits: { fileSize: 10 * 1024 * 1024 },
+  fileFilter: (_req, file, cb) => {
+    const allowed = /\.(jpg|jpeg|png|gif|webp|pdf|txt|md|sql|py|ts|js|json|csv|xlsx|zip)$/i;
+    if (allowed.test(path.extname(file.originalname))) {
+      cb(null, true);
+    } else {
+      cb(new Error("File type not allowed"));
+    }
+  },
+});
 
 async function getOpenAIClient(): Promise<OpenAI> {
   const customApiKey = await storage.getSetting("openai_api_key");
@@ -398,6 +424,27 @@ Respond as JSON with keys: feedback (string - your conversational review), score
       if (error instanceof z.ZodError) return res.status(400).json({ message: error.errors[0].message });
       res.status(500).json({ message: "Failed to submit for review" });
     }
+  });
+
+  // ========== FILE UPLOADS ==========
+  app.use("/uploads", express.static(uploadsDir, {
+    setHeaders: (res) => {
+      res.setHeader("X-Content-Type-Options", "nosniff");
+    },
+  }));
+
+  app.post("/api/upload", requireAuth, requireAdmin, upload.array("files", 5), (req, res) => {
+    const files = req.files as Express.Multer.File[];
+    if (!files || files.length === 0) {
+      return res.status(400).json({ message: "No files uploaded" });
+    }
+    const urls = files.map(f => ({
+      url: `/uploads/${f.filename}`,
+      name: f.originalname,
+      size: f.size,
+      type: f.mimetype,
+    }));
+    res.json({ files: urls });
   });
 
   // ========== CONTACTS ==========

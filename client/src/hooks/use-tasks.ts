@@ -114,6 +114,23 @@ export function useSubmitTask() {
   });
 }
 
+export function useUploadFiles() {
+  const { token } = useAuth();
+  return useMutation({
+    mutationFn: async (files: File[]) => {
+      const formData = new FormData();
+      files.forEach(f => formData.append("files", f));
+      const res = await fetch("/api/upload", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+        body: formData,
+      });
+      if (!res.ok) throw new Error("Failed to upload files");
+      return res.json() as Promise<{ files: { url: string; name: string; size: number; type: string }[] }>;
+    },
+  });
+}
+
 export function useDeleteTask() {
   const queryClient = useQueryClient();
   const { token } = useAuth();

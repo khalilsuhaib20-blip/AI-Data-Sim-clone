@@ -1,5 +1,5 @@
-import { useState, useRef, useEffect } from "react";
-import { useTasks, useUpdateTask, useDeleteTask, useTaskLogs, useSubmitTask } from "@/hooks/use-tasks";
+import { useState, useRef, useEffect, useCallback } from "react";
+import { useTasks, useUpdateTask, useDeleteTask, useTaskLogs, useSubmitTask, useUploadFiles } from "@/hooks/use-tasks";
 import { useCompanies } from "@/hooks/use-companies";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -12,8 +12,11 @@ import { useToast } from "@/hooks/use-toast";
 import {
   Pencil, Trash2, Save, Loader2, Sparkles, Star, Send,
   GitBranch, Image, FileText, ExternalLink, MessageCircle,
-  User, Bot, CheckCircle, XCircle, Clock
+  User, Bot, CheckCircle, XCircle, Clock, Upload, Paperclip,
+  Bold, Italic, Code, List, Link
 } from "lucide-react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import type { TaskLog } from "@shared/schema";
 
 interface TaskForm {
@@ -299,14 +302,19 @@ function TaskDetailDialog({ task, companies, onClose, onCloseTask, onReopenTask 
 }) {
   const { data: logs = [], isLoading: logsLoading } = useTaskLogs(task.id);
   const submitTask = useSubmitTask();
+  const uploadFiles = useUploadFiles();
   const { toast } = useToast();
   const chatEndRef = useRef<HTMLDivElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [submissionContent, setSubmissionContent] = useState("");
   const [submissionGithub, setSubmissionGithub] = useState("");
   const [submissionScreenshot, setSubmissionScreenshot] = useState("");
   const [submissionFile, setSubmissionFile] = useState("");
   const [showAttachments, setShowAttachments] = useState(false);
+  const [uploadedFiles, setUploadedFiles] = useState<{ url: string; name: string; size: number; type: string }[]>([]);
+  const [isDragging, setIsDragging] = useState(false);
 
   const companyName = task.companyId ? companies.find((c: any) => c.id === task.companyId)?.name : null;
 
@@ -314,24 +322,70 @@ function TaskDetailDialog({ task, companies, onClose, onCloseTask, onReopenTask 
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [logs]);
 
+  const insertMarkdown = (prefix: string, suffix: string = "") => {
+    const ta = textareaRef.current;
+    if (!ta) return;
+    const start = ta.selectionStart;
+    const end = ta.selectionEnd;
+    const selected = submissionContent.slice(start, end);
+    const newText = submissionContent.slice(0, start) + prefix + selected + suffix + submissionContent.slice(end);
+    setSubmissionContent(newText);
+    setTimeout(() => {
+      ta.focus();
+      ta.setSelectionRange(start + prefix.length, start + prefix.length + selected.length);
+    }, 0);
+  };
+
+  const handleFileUpload = useCallback(async (files: File[]) => {
+    if (files.length === 0) return;
+    try {
+      const result = await uploadFiles.mutateAsync(files);
+      setUploadedFiles(prev => [...prev, ...result.files]);
+      const fileRefs = result.files.map(f => {
+        if (f.type.startsWith("image/")) return `![${f.name}](${f.url})`;
+        return `[${f.name}](${f.url})`;
+      }).join("\n");
+      setSubmissionContent(prev => prev ? prev + "\n\n" + fileRefs : fileRefs);
+      toast({ title: `${result.files.length} file(s) uploaded` });
+    } catch {
+      toast({ title: "File upload failed", variant: "destructive" });
+    }
+  }, [uploadFiles, toast]);
+
+  const handleDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(false);
+    const files = Array.from(e.dataTransfer.files);
+    if (files.length) handleFileUpload(files);
+  }, [handleFileUpload]);
+
+  const handleDragOver = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(true);
+  }, []);
+
+  const handleDragLeave = useCallback(() => setIsDragging(false), []);
+
   const handleSubmit = async () => {
     if (!submissionContent.trim()) {
       toast({ title: "Please describe your work.", variant: "destructive" });
       return;
     }
     try {
+      const fileUrls = uploadedFiles.map(f => f.url);
       await submitTask.mutateAsync({
         id: task.id,
         content: submissionContent,
         ...(submissionGithub ? { githubLink: submissionGithub } : {}),
         ...(submissionScreenshot ? { screenshotUrl: submissionScreenshot } : {}),
-        ...(submissionFile ? { fileUrl: submissionFile } : {}),
+        ...(submissionFile || fileUrls.length ? { fileUrl: submissionFile || fileUrls.join(", ") } : {}),
       });
       setSubmissionContent("");
       setSubmissionGithub("");
       setSubmissionScreenshot("");
       setSubmissionFile("");
       setShowAttachments(false);
+      setUploadedFiles([]);
     } catch {
       toast({ title: "Failed to submit. Check your AI settings.", variant: "destructive" });
     }
@@ -404,16 +458,93 @@ function TaskDetailDialog({ task, companies, onClose, onCloseTask, onReopenTask 
         </div>
 
         {task.status !== "completed" && (
-          <div className="border-t border-border/50 p-4 bg-card/50" data-testid="submission-area">
+          <div
+            className={`border-t border-border/50 p-4 bg-card/50 transition-colors ${isDragging ? "bg-primary/5 border-primary/30" : ""}`}
+            data-testid="submission-area"
+            onDrop={handleDrop}
+            onDragOver={handleDragOver}
+            onDragLeave={handleDragLeave}
+          >
+            <input
+              ref={fileInputRef}
+              type="file"
+              multiple
+              accept=".jpg,.jpeg,.png,.gif,.webp,.pdf,.txt,.md,.sql,.py,.ts,.js,.json,.csv,.xlsx,.zip"
+              className="hidden"
+              onChange={e => {
+                const files = Array.from(e.target.files || []);
+                if (files.length) handleFileUpload(files);
+                e.target.value = "";
+              }}
+              data-testid="input-file-upload"
+            />
             <div className="space-y-3">
+              <div className="flex items-center gap-1 border-b border-border/30 pb-2">
+                <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={() => insertMarkdown("**", "**")} title="Bold" data-testid="button-md-bold">
+                  <Bold className="w-3.5 h-3.5" />
+                </Button>
+                <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={() => insertMarkdown("*", "*")} title="Italic" data-testid="button-md-italic">
+                  <Italic className="w-3.5 h-3.5" />
+                </Button>
+                <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={() => insertMarkdown("`", "`")} title="Inline code" data-testid="button-md-code">
+                  <Code className="w-3.5 h-3.5" />
+                </Button>
+                <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={() => insertMarkdown("```\n", "\n```")} title="Code block" data-testid="button-md-codeblock">
+                  <Code className="w-3.5 h-3.5 text-primary" />
+                </Button>
+                <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={() => insertMarkdown("- ")} title="List" data-testid="button-md-list">
+                  <List className="w-3.5 h-3.5" />
+                </Button>
+                <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={() => insertMarkdown("[", "](url)")} title="Link" data-testid="button-md-link">
+                  <Link className="w-3.5 h-3.5" />
+                </Button>
+                <div className="flex-1" />
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 px-2 text-xs gap-1 text-muted-foreground"
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={uploadFiles.isPending}
+                  data-testid="button-upload-file"
+                >
+                  {uploadFiles.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <Upload className="w-3 h-3" />}
+                  Upload
+                </Button>
+              </div>
+
               <Textarea
+                ref={textareaRef}
                 value={submissionContent}
                 onChange={e => setSubmissionContent(e.target.value)}
-                placeholder="Describe your work, solution approach, or ask for guidance..."
-                rows={3}
-                className="resize-none"
+                placeholder="Describe your work using Markdown... drag & drop files here"
+                rows={4}
+                className="resize-none font-mono text-sm"
                 data-testid="input-submission-content"
               />
+
+              {uploadedFiles.length > 0 && (
+                <div className="flex items-center gap-2 flex-wrap">
+                  {uploadedFiles.map((f, i) => (
+                    <Badge key={i} variant="secondary" className="text-xs gap-1 py-1">
+                      <Paperclip className="w-3 h-3" />
+                      {f.name}
+                      <button
+                        className="ml-1 hover:text-destructive"
+                        onClick={() => setUploadedFiles(prev => prev.filter((_, idx) => idx !== i))}
+                      >
+                        <XCircle className="w-3 h-3" />
+                      </button>
+                    </Badge>
+                  ))}
+                </div>
+              )}
+
+              {isDragging && (
+                <div className="border-2 border-dashed border-primary/40 rounded-lg p-6 text-center bg-primary/5">
+                  <Upload className="w-6 h-6 mx-auto text-primary/60 mb-1" />
+                  <p className="text-xs text-primary/60 font-medium">Drop files here to upload</p>
+                </div>
+              )}
 
               {showAttachments && (
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
@@ -459,7 +590,7 @@ function TaskDetailDialog({ task, companies, onClose, onCloseTask, onReopenTask 
                   data-testid="button-toggle-attachments"
                 >
                   <GitBranch className="w-3 h-3" />
-                  {showAttachments ? "Hide attachments" : "Add links / files"}
+                  {showAttachments ? "Hide links" : "Add links"}
                 </Button>
                 <Button
                   size="sm"
@@ -512,7 +643,9 @@ function LogEntry({ log }: { log: TaskLog }) {
             <span className="text-[10px] text-muted-foreground">{timestamp}</span>
           </div>
           <div className="bg-primary/5 border border-primary/10 rounded-lg p-3">
-            <p className="text-sm whitespace-pre-wrap">{log.content}</p>
+            <div className="text-sm prose prose-sm max-w-none dark:prose-invert prose-p:my-1 prose-pre:bg-secondary prose-pre:text-foreground prose-code:text-primary prose-headings:text-foreground prose-a:text-primary">
+              <ReactMarkdown remarkPlugins={[remarkGfm]}>{log.content}</ReactMarkdown>
+            </div>
             {Object.keys(attachments).length > 0 && (
               <div className="flex items-center gap-3 mt-2 pt-2 border-t border-primary/10 flex-wrap">
                 {attachments.githubLink && (
@@ -562,7 +695,9 @@ function LogEntry({ log }: { log: TaskLog }) {
           )}
         </div>
         <div className="bg-secondary/50 border border-border/50 rounded-lg p-3">
-          <p className="text-sm whitespace-pre-wrap">{aiData.feedback || aiData.summary || log.content}</p>
+          <div className="text-sm prose prose-sm max-w-none dark:prose-invert prose-p:my-1 prose-pre:bg-background prose-pre:text-foreground prose-code:text-primary prose-headings:text-foreground prose-a:text-primary">
+            <ReactMarkdown remarkPlugins={[remarkGfm]}>{aiData.feedback || aiData.summary || log.content}</ReactMarkdown>
+          </div>
           {aiData.actionItems?.length > 0 && (
             <div className="mt-3 pt-2 border-t border-border/50">
               <p className="text-[11px] font-semibold text-muted-foreground mb-1.5 flex items-center gap-1">

@@ -46,7 +46,9 @@ Full-stack React + Express portfolio web app that simulates working at multiple 
 - Companies have: name, industry, description, status, startDate, endDate, githubLink
 - Tasks have: title, description, requestedBy, priority, projectArea, recommendedRole, status, companyId, solutionNotes, architectureNotes, githubLink, documentationLink
 - Task Logs (taskLogs): conversational history per task — user submissions and AI reviews stored chronologically
-- Admin ManageTasks: click task → detail popup with full info, conversation log, submission area (text + GitHub/screenshot/file links), "Submit for AI Review" sends to AI and shows response inline
+- Admin ManageTasks: click task → detail popup with full info, conversation log, submission area with Markdown toolbar + file upload + GitHub/screenshot/file links, "Submit for AI Review" sends to AI and shows response inline
+- File upload: drag-and-drop or click Upload button, files stored in `uploads/` directory (local filesystem), served at `/uploads/*`, max 10MB per file, supports images/PDFs/code/docs
+- Markdown support: toolbar (bold, italic, code, code block, list, link) in submission area; conversation log renders Markdown via react-markdown + remark-gfm
 - Tasks can be closed (completed) or reopened from the detail popup
 - Backlog tasks auto-move to "in_progress" on first submission
 - Design: Electric indigo primary, Bricolage Grotesque + DM Sans fonts
@@ -62,6 +64,7 @@ Full-stack React + Express portfolio web app that simulates working at multiple 
 - `GET/PATCH/DELETE /api/tasks/:id` - Get/update/delete task (all fields editable)
 - `GET /api/tasks/:id/logs` - Get conversation log for task (admin)
 - `POST /api/tasks/:id/submit` - Submit work for AI review (admin, creates user+AI log entries)
+- `POST /api/upload` - Upload files (admin, multipart form, max 5 files, returns URLs)
 - `POST /api/generate-task` - AI task generation (admin)
 - `GET/POST /api/contacts` - List (admin)/create contact requests
 - `GET/PUT /api/settings` - Get/update app settings (admin)

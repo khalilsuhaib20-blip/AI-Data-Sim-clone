@@ -66,9 +66,9 @@ export function Navbar() {
                 <Link href="/contact" className={linkClass("/contact")} data-testid="link-contact">
                   <Mail className="w-4 h-4" /> Contact
                 </Link>
-                <div className="w-px h-6 bg-border mx-1" />
-                {isAdmin ? (
+                {isAdmin && (
                   <>
+                    <div className="w-px h-6 bg-border mx-1" />
                     <Link href="/admin" className={linkClass("/admin")} data-testid="link-admin">
                       <Shield className="w-4 h-4" /> Admin
                     </Link>
@@ -76,10 +76,6 @@ export function Navbar() {
                       <LogOut className="w-4 h-4" />
                     </Button>
                   </>
-                ) : (
-                  <Link href="/login" className={linkClass("/login")} data-testid="link-login">
-                    <Lock className="w-4 h-4" /> Admin
-                  </Link>
                 )}
               </>
             )}

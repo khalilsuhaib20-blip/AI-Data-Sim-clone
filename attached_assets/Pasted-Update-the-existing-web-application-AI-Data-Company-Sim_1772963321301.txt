@@ -1,0 +1,315 @@
+Update the existing web application "AI Data Company Simulator Portfolio" with a secure admin interface and a public visitor interface.
+
+The platform simulates my work across multiple companies where I perform roles such as Data Analyst, Data Engineer, Data Scientist, ML Engineer, and Power Platform Architect.
+
+Visitors should only be able to view my work. Only I (admin) can modify data.
+
+---
+
+TECH STACK
+
+Frontend:
+React + Tailwind
+
+Backend:
+Python FastAPI
+
+Database:
+SQLite (MVP)
+
+Authentication:
+JWT based authentication
+
+LLM Providers:
+OpenAI API
+Anthropic API
+
+Environment variables:
+
+OPENAI_API_KEY
+ANTHROPIC_API_KEY
+JWT_SECRET_KEY
+
+---
+
+AUTHENTICATION SYSTEM
+
+Create a secure admin authentication system.
+
+Only one admin user is required for MVP.
+
+Create a users table:
+
+id
+username
+password_hash
+role
+created_at
+
+Role values:
+admin
+viewer
+
+Password must be hashed using bcrypt.
+
+---
+
+AUTH ENDPOINTS
+
+POST /auth/login
+POST /auth/logout
+GET /auth/me
+
+Login returns a JWT token.
+
+The token must be stored in the frontend and sent in headers:
+
+Authorization: Bearer <token>
+
+---
+
+ROLE BASED ACCESS CONTROL
+
+Admin permissions:
+
+create companies
+edit companies
+close companies
+generate tasks
+edit tasks
+update task status
+add solution notes
+add github links
+view contact requests
+
+Visitor permissions:
+
+view companies
+view tasks
+view completed work
+send contact message
+
+Visitors cannot modify any data.
+
+---
+
+ADMIN DASHBOARD
+
+Create a secure admin dashboard available only after login.
+
+Admin pages:
+
+Admin Dashboard
+Manage Companies
+Manage Tasks
+Generate AI Task
+Contact Requests
+
+Admin Dashboard shows:
+
+total companies
+active companies
+total tasks
+completed tasks
+tasks in progress
+
+---
+
+PUBLIC WEBSITE
+
+Visitors should not see the admin panel.
+
+Public pages:
+
+Home
+Companies
+Company Details
+Tasks
+Task Details
+Dashboard Summary
+Contact
+
+Visitors can browse companies and see completed work.
+
+---
+
+COMPANY MANAGEMENT
+
+Admin can:
+
+create company
+edit company
+pause company
+close company
+
+companies table:
+
+id
+name
+industry
+description
+status
+start_date
+end_date
+
+---
+
+TASK MANAGEMENT
+
+Each task belongs to a company.
+
+tasks table:
+
+id
+company_id
+title
+description
+requested_by
+priority
+project_area
+recommended_role
+status
+solution_notes
+architecture_notes
+github_link
+documentation_link
+created_at
+
+Task statuses:
+
+backlog
+in_progress
+completed
+
+---
+
+TASK GENERATION USING LLM
+
+Admin can click:
+
+"Generate Task"
+
+Backend endpoint:
+
+POST /generate-task
+
+The backend sends prompt to OpenAI or Anthropic API.
+
+Prompt example:
+
+"You are simulating a real technology company team.
+
+Generate a realistic task request for a data professional.
+
+Company industry: {industry}
+
+Possible roles requesting work:
+Stakeholder
+Software Engineer
+Data Engineer
+Data Scientist
+ML Engineer
+Analyst
+
+Return JSON with:
+
+title
+description
+requested_by
+priority
+project_area
+recommended_role
+deliverables"
+
+Parse the JSON and create a new task.
+
+---
+
+GLOBAL DASHBOARD
+
+Create a dashboard showing work across all companies.
+
+Metrics:
+
+Total companies
+Active companies
+Total tasks
+Completed tasks
+Tasks in progress
+
+Add charts:
+
+Tasks by company
+Tasks by role
+Tasks by project area
+
+Add a view toggle:
+
+1. All Tasks
+2. Group by Company
+
+---
+
+CONTACT SYSTEM
+
+Create a public contact page where visitors can request more information.
+
+Fields:
+
+name
+email
+message
+related_company
+related_task
+
+contact_requests table:
+
+id
+name
+email
+message
+related_company
+related_task
+created_at
+
+Admin can view all contact requests inside the admin dashboard.
+
+---
+
+UI STRUCTURE
+
+Public Navigation:
+
+Home
+Dashboard
+Companies
+Tasks
+Contact
+
+Admin Navigation (only after login):
+
+Admin Dashboard
+Companies Manager
+Tasks Manager
+Generate Task
+Contact Requests
+
+---
+
+SECURITY REQUIREMENTS
+
+Use JWT authentication.
+
+Protect admin routes using authentication middleware.
+
+Hash passwords with bcrypt.
+
+Never expose API keys in frontend.
+
+Load secrets from environment variables.
+
+---
+
+GOAL
+
+The platform should feel like a real engineering portfolio where I manage work across multiple simulated companies and visitors can explore the projects while only I can manage the system.

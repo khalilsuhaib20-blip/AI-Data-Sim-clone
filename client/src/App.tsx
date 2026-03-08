@@ -6,13 +6,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { Navbar } from "@/components/layout/Navbar";
 import { AuthProvider, useAuth } from "@/lib/auth";
 import NotFound from "@/pages/not-found";
-import Home from "@/pages/Home";
-import Companies from "@/pages/Companies";
-import CompanyDetails from "@/pages/CompanyDetails";
-import Tasks from "@/pages/Tasks";
-import TaskDetails from "@/pages/TaskDetails";
-import Dashboard from "@/pages/Dashboard";
-import Contact from "@/pages/Contact";
+import PortfolioDashboard from "@/pages/PortfolioDashboard";
 import Login from "@/pages/Login";
 import AdminDashboard from "@/pages/admin/AdminDashboard";
 import ManageCompanies from "@/pages/admin/ManageCompanies";
@@ -31,13 +25,7 @@ function AdminRoute({ component: Component }: { component: React.ComponentType }
 function Router() {
   return (
     <Switch>
-      <Route path="/" component={Home} />
-      <Route path="/companies" component={Companies} />
-      <Route path="/companies/:id" component={CompanyDetails} />
-      <Route path="/tasks" component={Tasks} />
-      <Route path="/tasks/:id" component={TaskDetails} />
-      <Route path="/dashboard" component={Dashboard} />
-      <Route path="/contact" component={Contact} />
+      <Route path="/" component={PortfolioDashboard} />
       <Route path="/login" component={Login} />
       <Route path="/admin">{() => <AdminRoute component={AdminDashboard} />}</Route>
       <Route path="/admin/companies">{() => <AdminRoute component={ManageCompanies} />}</Route>

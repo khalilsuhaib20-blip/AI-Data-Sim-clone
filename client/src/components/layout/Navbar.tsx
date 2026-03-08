@@ -1,5 +1,5 @@
 import { Link, useLocation } from "wouter";
-import { Database, LayoutGrid, Building2, BarChart3, Mail, Lock, LogOut, Shield, Sparkles, Inbox, Settings2 } from "lucide-react";
+import { Database, LayoutGrid, Building2, LogOut, Shield, Sparkles, Inbox, Settings2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/lib/auth";
 
@@ -15,16 +15,16 @@ export function Navbar() {
 
   return (
     <nav className="sticky top-0 z-50 w-full glass-panel border-b border-border/40">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="flex justify-between h-16 items-center gap-4">
-          <div className="flex items-center gap-2 shrink-0">
+      <div className="max-w-[1400px] mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="flex justify-between h-14 items-center gap-4">
+          <Link href="/" className="flex items-center gap-2 shrink-0" data-testid="link-home">
             <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-primary to-primary/70 flex items-center justify-center shadow-lg shadow-primary/20 text-white">
               <Database className="w-4 h-4" />
             </div>
-            <Link href="/" className="text-xl font-display font-bold bg-clip-text text-transparent bg-gradient-to-r from-foreground to-foreground/70" data-testid="link-home">
+            <span className="text-lg font-display font-bold bg-clip-text text-transparent bg-gradient-to-r from-foreground to-foreground/70">
               DataSim
-            </Link>
-          </div>
+            </span>
+          </Link>
 
           <div className="flex items-center gap-1 overflow-x-auto">
             {isAdminRoute && isAdmin ? (
@@ -49,7 +49,7 @@ export function Navbar() {
                 </Link>
                 <div className="w-px h-6 bg-border mx-1" />
                 <Link href="/" className={linkClass("/__public__")} data-testid="link-public-site">
-                  Public Site
+                  Portfolio
                 </Link>
                 <Button variant="ghost" size="sm" onClick={logout} className="text-muted-foreground" data-testid="button-logout">
                   <LogOut className="w-4 h-4 mr-1" /> Logout
@@ -57,21 +57,8 @@ export function Navbar() {
               </>
             ) : (
               <>
-                <Link href="/dashboard" className={linkClass("/dashboard")} data-testid="link-dashboard">
-                  <BarChart3 className="w-4 h-4" /> Dashboard
-                </Link>
-                <Link href="/companies" className={linkClass("/companies")} data-testid="link-companies">
-                  <Building2 className="w-4 h-4" /> Companies
-                </Link>
-                <Link href="/tasks" className={linkClass("/tasks")} data-testid="link-tasks">
-                  <LayoutGrid className="w-4 h-4" /> Tasks
-                </Link>
-                <Link href="/contact" className={linkClass("/contact")} data-testid="link-contact">
-                  <Mail className="w-4 h-4" /> Contact
-                </Link>
                 {isAdmin && (
                   <>
-                    <div className="w-px h-6 bg-border mx-1" />
                     <Link href="/admin" className={linkClass("/admin")} data-testid="link-admin">
                       <Shield className="w-4 h-4" /> Admin
                     </Link>

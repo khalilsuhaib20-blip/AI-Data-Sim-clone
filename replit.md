@@ -1,17 +1,16 @@
 # AI Data Company Simulator Portfolio
 
 ## Overview
-Full-stack React + Express portfolio web app that simulates working at multiple data companies. Features AI-generated data engineering tasks via OpenAI, JWT admin auth, a Kanban task board, a dashboard with analytics, and a contact form.
+Full-stack React + Express portfolio web app that simulates working at multiple data companies. Features AI-generated data engineering tasks via OpenAI, JWT admin auth, multi-view dashboard (Kanban/Timeline/Calendar), contact modal, and admin interface.
 
 ## Tech Stack
 - **Frontend**: React 18 + Vite + TypeScript + TailwindCSS + shadcn/ui
 - **Backend**: Express + TypeScript
 - **Database**: PostgreSQL via Drizzle ORM
 - **Auth**: JWT (jsonwebtoken + bcryptjs)
-- **AI**: OpenAI via Replit AI Integrations
+- **AI**: OpenAI via Replit AI Integrations (configurable in admin Settings)
 - **Routing**: wouter (frontend), Express (backend)
 - **State**: TanStack Query v5
-- **DnD**: @hello-pangea/dnd (Board page, currently unused in main routes)
 
 ## Architecture
 
@@ -20,20 +19,22 @@ Full-stack React + Express portfolio web app that simulates working at multiple 
 - `routes.ts` - API route definitions, Zod schemas, type exports
 
 ### Server (`server/`)
-- `routes.ts` - All API endpoints with auth middleware
-- `storage.ts` - Database CRUD via IStorage interface
+- `routes.ts` - All API endpoints with auth middleware, dynamic OpenAI config
+- `storage.ts` - Database CRUD via IStorage interface (includes settings)
 - `auth.ts` - JWT generation/verification, bcrypt, middleware (requireAuth/requireAdmin), admin seeder
 - `db.ts` - Drizzle database connection
 
 ### Client (`client/src/`)
-- `App.tsx` - Routes + AuthProvider + Navbar
-- `lib/auth.tsx` - AuthProvider context, useAuth hook, authFetch helper
-- `hooks/use-tasks.ts` - Task queries/mutations with optimistic updates
+- `App.tsx` - Routes + AuthProvider + Navbar (public: / and /login; admin: /admin/*)
+- `lib/auth.tsx` - AuthProvider context, useAuth hook
+- `hooks/use-tasks.ts` - Task queries/mutations
 - `hooks/use-companies.ts` - Company queries/mutations
-- `components/layout/Navbar.tsx` - Responsive nav with public/admin mode switching
+- `components/layout/Navbar.tsx` - Minimal public nav, full admin nav
+- `components/views/` - KanbanView, TimelineView, CalendarView, TaskCard
+- `components/ContactModal.tsx` - Task detail + contact form modal
 
 ### Pages
-- **Public**: Home, Companies, CompanyDetails, Tasks, TaskDetails, Dashboard, Contact, Login
+- **Public**: PortfolioDashboard (/ - unified dashboard with Kanban/Timeline/Calendar views, filters, contact), Login
 - **Admin** (require JWT + admin role): AdminDashboard, ManageCompanies, ManageTasks, GenerateTask, ContactRequests, Settings
 
 ## Key Details
@@ -41,6 +42,7 @@ Full-stack React + Express portfolio web app that simulates working at multiple 
 - JWT secret: `SESSION_SECRET` env var
 - OpenAI: Uses built-in Replit AI integration by default; customizable via admin Settings page (API key, base URL, model)
 - Admin login: Hidden from public navbar; access via `/login` directly
+- Public site: Single-page dashboard at `/` with 3 views (Kanban, Timeline, Calendar), filters (company, topic), and Contact button per task
 - Design: Electric indigo primary, Bricolage Grotesque + DM Sans fonts
 - CSS utilities: `glass-panel`, `card-hover`
 - Run: `npm run dev` (Start application workflow)

@@ -19,6 +19,7 @@ import ManageCompanies from "@/pages/admin/ManageCompanies";
 import ManageTasks from "@/pages/admin/ManageTasks";
 import GenerateTask from "@/pages/admin/GenerateTask";
 import ContactRequests from "@/pages/admin/ContactRequests";
+import SettingsPage from "@/pages/admin/Settings";
 
 function AdminRoute({ component: Component }: { component: React.ComponentType }) {
   const { isAdmin, isLoading } = useAuth();
@@ -43,6 +44,7 @@ function Router() {
       <Route path="/admin/tasks">{() => <AdminRoute component={ManageTasks} />}</Route>
       <Route path="/admin/generate">{() => <AdminRoute component={GenerateTask} />}</Route>
       <Route path="/admin/contacts">{() => <AdminRoute component={ContactRequests} />}</Route>
+      <Route path="/admin/settings">{() => <AdminRoute component={SettingsPage} />}</Route>
       <Route component={NotFound} />
     </Switch>
   );

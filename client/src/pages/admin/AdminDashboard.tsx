@@ -92,6 +92,12 @@ export default function AdminDashboard() {
                   <p className="text-xs text-muted-foreground">Use AI to create a realistic new task</p>
                 </div>
               </Link>
+              <Link href="/admin/settings">
+                <div className="bg-secondary/30 rounded-xl p-4 border border-border/50 card-hover cursor-pointer" data-testid="link-settings">
+                  <p className="font-semibold text-sm">Settings</p>
+                  <p className="text-xs text-muted-foreground">Configure AI provider, API keys, and preferences</p>
+                </div>
+              </Link>
             </div>
           </CardContent>
         </Card>

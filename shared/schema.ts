@@ -48,6 +48,13 @@ export const contactRequests = pgTable("contact_requests", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
+export const appSettings = pgTable("app_settings", {
+  id: serial("id").primaryKey(),
+  key: text("key").notNull().unique(),
+  value: text("value").notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
 export const insertUserSchema = createInsertSchema(users).omit({ id: true, createdAt: true });
 export const insertCompanySchema = createInsertSchema(companies).omit({ id: true, createdAt: true });
 export const insertTaskSchema = createInsertSchema(tasks).omit({ id: true, createdAt: true });
@@ -61,3 +68,4 @@ export type Task = typeof tasks.$inferSelect;
 export type InsertTask = z.infer<typeof insertTaskSchema>;
 export type ContactRequest = typeof contactRequests.$inferSelect;
 export type InsertContact = z.infer<typeof insertContactSchema>;
+export type AppSetting = typeof appSettings.$inferSelect;

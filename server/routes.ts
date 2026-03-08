@@ -6,10 +6,21 @@ import { z } from "zod";
 import OpenAI from "openai";
 import { generateToken, comparePassword, requireAuth, requireAdmin, seedAdminUser } from "./auth";
 
-const openai = new OpenAI({
-  apiKey: process.env.AI_INTEGRATIONS_OPENAI_API_KEY,
-  baseURL: process.env.AI_INTEGRATIONS_OPENAI_BASE_URL,
-});
+async function getOpenAIClient(): Promise<OpenAI> {
+  const customApiKey = await storage.getSetting("openai_api_key");
+  const customBaseUrl = await storage.getSetting("openai_base_url");
+  const customModel = await storage.getSetting("openai_model");
+
+  return new OpenAI({
+    apiKey: customApiKey || process.env.AI_INTEGRATIONS_OPENAI_API_KEY,
+    baseURL: customBaseUrl || process.env.AI_INTEGRATIONS_OPENAI_BASE_URL,
+  });
+}
+
+async function getAIModel(): Promise<string> {
+  const customModel = await storage.getSetting("openai_model");
+  return customModel || "gpt-4o";
+}
 
 async function seedDatabase() {
   await seedAdminUser();
@@ -218,8 +229,10 @@ export async function registerRoutes(
         if (company) industry = company.industry;
       }
 
+      const openai = await getOpenAIClient();
+      const model = await getAIModel();
       const response = await openai.chat.completions.create({
-        model: "gpt-5.2",
+        model,
         messages: [{
           role: "system",
           content: `You are simulating a real technology company team.
@@ -283,6 +296,41 @@ title, description, requestedBy, priority (low/medium/high/urgent), projectArea 
       if (err instanceof z.ZodError) return res.status(400).json({ message: err.errors[0].message, field: err.errors[0].path.join(".") });
       throw err;
     }
+  });
+
+  // ========== SETTINGS ==========
+  app.get("/api/settings", requireAuth, requireAdmin, async (_req, res) => {
+    const allSettings = await storage.getAllSettings();
+    const settingsMap: Record<string, string> = {};
+    for (const s of allSettings) {
+      if (s.key === "openai_api_key" && s.value) {
+        settingsMap[s.key] = s.value.slice(0, 8) + "..." + s.value.slice(-4);
+      } else {
+        settingsMap[s.key] = s.value;
+      }
+    }
+    res.json(settingsMap);
+  });
+
+  app.put("/api/settings", requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const input = z.record(z.string(), z.string()).parse(req.body);
+      for (const [key, value] of Object.entries(input)) {
+        if (value.includes("...") && key === "openai_api_key") continue;
+        if (value) {
+          await storage.setSetting(key, value);
+        }
+      }
+      res.json({ message: "Settings saved" });
+    } catch (err) {
+      res.status(400).json({ message: "Invalid settings data" });
+    }
+  });
+
+  app.delete("/api/settings/:key", requireAuth, requireAdmin, async (req, res) => {
+    const key = req.params.key;
+    await storage.setSetting(key, "");
+    res.json({ message: `Setting '${key}' cleared` });
   });
 
   // ========== DASHBOARD ==========

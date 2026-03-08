@@ -16,7 +16,7 @@ Full-stack React + Express portfolio web app that simulates working at multiple 
 ## Architecture
 
 ### Shared (`shared/`)
-- `schema.ts` - Drizzle schema: users, companies, tasks, contactRequests
+- `schema.ts` - Drizzle schema: users, companies, tasks, contactRequests, appSettings
 - `routes.ts` - API route definitions, Zod schemas, type exports
 
 ### Server (`server/`)
@@ -34,12 +34,13 @@ Full-stack React + Express portfolio web app that simulates working at multiple 
 
 ### Pages
 - **Public**: Home, Companies, CompanyDetails, Tasks, TaskDetails, Dashboard, Contact, Login
-- **Admin** (require JWT + admin role): AdminDashboard, ManageCompanies, ManageTasks, GenerateTask, ContactRequests
+- **Admin** (require JWT + admin role): AdminDashboard, ManageCompanies, ManageTasks, GenerateTask, ContactRequests, Settings
 
 ## Key Details
 - Admin credentials: `admin / admin123` (seeded on first run)
 - JWT secret: `SESSION_SECRET` env var
-- OpenAI keys: `AI_INTEGRATIONS_OPENAI_API_KEY` + `AI_INTEGRATIONS_OPENAI_BASE_URL`
+- OpenAI: Uses built-in Replit AI integration by default; customizable via admin Settings page (API key, base URL, model)
+- Admin login: Hidden from public navbar; access via `/login` directly
 - Design: Electric indigo primary, Bricolage Grotesque + DM Sans fonts
 - CSS utilities: `glass-panel`, `card-hover`
 - Run: `npm run dev` (Start application workflow)
@@ -53,4 +54,6 @@ Full-stack React + Express portfolio web app that simulates working at multiple 
 - `GET/PATCH/DELETE /api/tasks/:id` - Get/update/delete task
 - `POST /api/generate-task` - AI task generation (admin)
 - `GET/POST /api/contacts` - List (admin)/create contact requests
+- `GET/PUT /api/settings` - Get/update app settings (admin)
+- `DELETE /api/settings/:key` - Clear a setting (admin)
 - `GET /api/dashboard/stats` - Dashboard analytics

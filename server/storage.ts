@@ -1,10 +1,11 @@
 import { db } from "./db";
 import {
-  users, companies, tasks, contactRequests,
+  users, companies, tasks, contactRequests, appSettings,
   type InsertUser, type User,
   type InsertCompany, type Company,
   type InsertTask, type Task,
   type InsertContact, type ContactRequest,
+  type AppSetting,
 } from "@shared/schema";
 import { eq, desc, count, and } from "drizzle-orm";
 
@@ -28,6 +29,10 @@ export interface IStorage {
 
   getContacts(): Promise<ContactRequest[]>;
   createContact(contact: InsertContact): Promise<ContactRequest>;
+
+  getSetting(key: string): Promise<string | null>;
+  setSetting(key: string, value: string): Promise<void>;
+  getAllSettings(): Promise<AppSetting[]>;
 
   getDashboardStats(): Promise<{
     totalCompanies: number;
@@ -103,6 +108,22 @@ export class DatabaseStorage implements IStorage {
   async createContact(contact: InsertContact) {
     const [newContact] = await db.insert(contactRequests).values(contact).returning();
     return newContact;
+  }
+
+  async getSetting(key: string) {
+    const [row] = await db.select().from(appSettings).where(eq(appSettings.key, key));
+    return row?.value ?? null;
+  }
+  async setSetting(key: string, value: string) {
+    const [existing] = await db.select().from(appSettings).where(eq(appSettings.key, key));
+    if (existing) {
+      await db.update(appSettings).set({ value, updatedAt: new Date() }).where(eq(appSettings.key, key));
+    } else {
+      await db.insert(appSettings).values({ key, value });
+    }
+  }
+  async getAllSettings() {
+    return db.select().from(appSettings);
   }
 
   async getDashboardStats() {

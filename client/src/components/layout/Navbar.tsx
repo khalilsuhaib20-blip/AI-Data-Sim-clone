@@ -1,5 +1,5 @@
 import { Link, useLocation } from "wouter";
-import { Database, LayoutGrid, Building2, BarChart3, Mail, Lock, LogOut, Shield, Sparkles, Inbox } from "lucide-react";
+import { Database, LayoutGrid, Building2, BarChart3, Mail, Lock, LogOut, Shield, Sparkles, Inbox, Settings2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/lib/auth";
 
@@ -43,6 +43,9 @@ export function Navbar() {
                 </Link>
                 <Link href="/admin/contacts" className={linkClass("/admin/contacts")} data-testid="link-admin-contacts">
                   <Inbox className="w-4 h-4" /> Contacts
+                </Link>
+                <Link href="/admin/settings" className={linkClass("/admin/settings")} data-testid="link-admin-settings">
+                  <Settings2 className="w-4 h-4" /> Settings
                 </Link>
                 <div className="w-px h-6 bg-border mx-1" />
                 <Link href="/" className={linkClass("/__public__")} data-testid="link-public-site">

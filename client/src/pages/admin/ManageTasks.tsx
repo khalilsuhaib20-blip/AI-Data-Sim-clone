@@ -1,5 +1,5 @@
-import { useState, useRef, useEffect, useCallback } from "react";
-import { useTasks, useUpdateTask, useDeleteTask, useTaskLogs, useSubmitTask, useUploadFiles } from "@/hooks/use-tasks";
+import { useState } from "react";
+import { useTasks, useUpdateTask, useDeleteTask, useGenerateTask, useUpdateProgress } from "@/hooks/use-tasks";
 import { useCompanies } from "@/hooks/use-companies";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -10,14 +10,10 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Card, CardContent } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
 import {
-  Pencil, Trash2, Save, Loader2, Sparkles, Star, Send,
-  GitBranch, Image, FileText, ExternalLink, MessageCircle,
-  User, Bot, CheckCircle, XCircle, Clock, Upload, Paperclip,
-  Bold, Italic, Code, List, Link
+  Pencil, Trash2, Save, Loader2, Sparkles,
+  GitBranch, ExternalLink, CheckCircle, XCircle, Clock,
+  MessageCircle, ListChecks, FileText, User, Zap
 } from "lucide-react";
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
-import type { TaskLog } from "@shared/schema";
 
 interface TaskForm {
   title: string;
@@ -26,13 +22,49 @@ interface TaskForm {
   priority: string;
   projectArea: string;
   recommendedRole: string;
+  assignedRole: string;
+  difficulty: string;
   status: string;
+  businessContext: string;
+  subtasks: string;
+  deliverables: string;
   solutionNotes: string;
   architectureNotes: string;
   githubLink: string;
   documentationLink: string;
   companyId: string;
+  milestoneId: string;
 }
+
+function parseJsonArray(val: string | null | undefined): string[] {
+  if (!val) return [];
+  try {
+    const parsed = JSON.parse(val);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+const difficultyColors: Record<string, string> = {
+  easy: "bg-emerald-500/10 text-emerald-600 border-emerald-500/20",
+  medium: "bg-amber-500/10 text-amber-600 border-amber-500/20",
+  hard: "bg-orange-500/10 text-orange-600 border-orange-500/20",
+  expert: "bg-red-500/10 text-red-600 border-red-500/20",
+};
+
+const priorityColors: Record<string, string> = {
+  low: "bg-secondary text-secondary-foreground",
+  medium: "bg-blue-500/10 text-blue-600 border-blue-500/20",
+  high: "bg-orange-500/10 text-orange-600 border-orange-500/20",
+  urgent: "bg-red-500/10 text-red-600 border-red-500/20",
+};
+
+const statusConfig: Record<string, { color: string; icon: typeof Clock; label: string }> = {
+  backlog: { color: "bg-secondary text-secondary-foreground", icon: Clock, label: "Backlog" },
+  in_progress: { color: "bg-blue-500/10 text-blue-600 border-blue-500/20", icon: MessageCircle, label: "Active" },
+  completed: { color: "bg-emerald-500/10 text-emerald-600 border-emerald-500/20", icon: CheckCircle, label: "Closed" },
+};
 
 export default function ManageTasks() {
   const { data: tasks = [], isLoading } = useTasks();
@@ -45,7 +77,14 @@ export default function ManageTasks() {
   const [form, setForm] = useState<TaskForm>({} as TaskForm);
   const [detailTask, setDetailTask] = useState<any | null>(null);
 
+  const getCompanyName = (companyId: number | null) => {
+    if (!companyId) return null;
+    return companies.find((c: any) => c.id === companyId)?.name || null;
+  };
+
   const openEdit = (t: any) => {
+    const subtasksArr = parseJsonArray(t.subtasks);
+    const deliverablesArr = parseJsonArray(t.deliverables);
     setForm({
       title: t.title || "",
       description: t.description || "",
@@ -53,12 +92,18 @@ export default function ManageTasks() {
       priority: t.priority || "medium",
       projectArea: t.projectArea || "",
       recommendedRole: t.recommendedRole || "",
+      assignedRole: t.assignedRole || "",
+      difficulty: t.difficulty || "medium",
       status: t.status,
+      businessContext: t.businessContext || "",
+      subtasks: subtasksArr.join("\n"),
+      deliverables: deliverablesArr.join("\n"),
       solutionNotes: t.solutionNotes || "",
       architectureNotes: t.architectureNotes || "",
       githubLink: t.githubLink || "",
       documentationLink: t.documentationLink || "",
       companyId: t.companyId?.toString() || "",
+      milestoneId: t.milestoneId?.toString() || "",
     });
     setEditTask(t);
   };
@@ -68,6 +113,8 @@ export default function ManageTasks() {
       toast({ title: "Please fill in all required fields.", variant: "destructive" });
       return;
     }
+    const subtasksArray = form.subtasks.split("\n").map(s => s.trim()).filter(Boolean);
+    const deliverablesArray = form.deliverables.split("\n").map(s => s.trim()).filter(Boolean);
     try {
       await updateTask.mutateAsync({
         id: editTask.id,
@@ -77,12 +124,18 @@ export default function ManageTasks() {
         priority: form.priority,
         projectArea: form.projectArea,
         recommendedRole: form.recommendedRole || null,
+        assignedRole: form.assignedRole || null,
+        difficulty: form.difficulty || null,
         status: form.status,
+        businessContext: form.businessContext || null,
+        subtasks: subtasksArray.length > 0 ? JSON.stringify(subtasksArray) : null,
+        deliverables: deliverablesArray.length > 0 ? JSON.stringify(deliverablesArray) : null,
         solutionNotes: form.solutionNotes || null,
         architectureNotes: form.architectureNotes || null,
         githubLink: form.githubLink || null,
         documentationLink: form.documentationLink || null,
         companyId: form.companyId ? Number(form.companyId) : null,
+        milestoneId: form.milestoneId ? Number(form.milestoneId) : null,
       });
       toast({ title: "Task updated." });
       setEditTask(null);
@@ -125,55 +178,71 @@ export default function ManageTasks() {
     }
   };
 
-  const statusConfig: Record<string, { color: string; icon: typeof Clock; label: string }> = {
-    backlog: { color: "bg-secondary text-secondary-foreground", icon: Clock, label: "Backlog" },
-    in_progress: { color: "bg-blue-500/10 text-blue-600", icon: MessageCircle, label: "Active" },
-    completed: { color: "bg-emerald-500/10 text-emerald-600", icon: CheckCircle, label: "Closed" },
-  };
-
   if (isLoading) {
-    return <div className="flex-1 flex items-center justify-center min-h-[calc(100vh-4rem)]"><Loader2 className="w-8 h-8 animate-spin text-primary" /></div>;
+    return (
+      <div className="flex-1 flex items-center justify-center min-h-[calc(100vh-4rem)]">
+        <Loader2 className="w-8 h-8 animate-spin text-primary" />
+      </div>
+    );
   }
 
   return (
     <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
       <div className="mb-8">
         <h1 className="text-3xl font-display font-bold" data-testid="text-manage-tasks">Manage Tasks</h1>
-        <p className="text-muted-foreground mt-1">Click any task to open details, submit work, and get AI reviews.</p>
+        <p className="text-muted-foreground mt-1">Click any task to view details, track progress, and manage work.</p>
       </div>
 
       <div className="space-y-3">
         {tasks.map((task: any) => {
           const sc = statusConfig[task.status] || statusConfig.backlog;
           const StatusIcon = sc.icon;
+          const companyName = getCompanyName(task.companyId);
           return (
-            <Card key={task.id} className="border-border/50 cursor-pointer card-hover" data-testid={`task-row-${task.id}`} onClick={() => setDetailTask(task)}>
+            <Card
+              key={task.id}
+              className="border-border/50 cursor-pointer hover-elevate"
+              data-testid={`task-row-${task.id}`}
+              onClick={() => setDetailTask(task)}
+            >
               <CardContent className="p-4 flex items-center justify-between gap-4 flex-wrap">
                 <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2">
-                    <p className="font-display font-bold truncate text-sm">{task.title}</p>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <p className="font-display font-bold truncate text-sm" data-testid={`text-task-title-${task.id}`}>{task.title}</p>
                   </div>
-                  <div className="flex items-center gap-2 mt-1 flex-wrap">
-                    <span className="text-xs text-muted-foreground">{task.requestedBy}</span>
-                    <span className="text-xs text-muted-foreground">|</span>
-                    <span className="text-xs text-muted-foreground">{task.projectArea}</span>
-                    {task.companyId && companies.find((c: any) => c.id === task.companyId) && (
+                  <div className="flex items-center gap-2 mt-1.5 flex-wrap">
+                    {companyName && (
+                      <span className="text-xs text-muted-foreground" data-testid={`text-task-company-${task.id}`}>{companyName}</span>
+                    )}
+                    {companyName && <span className="text-xs text-muted-foreground">|</span>}
+                    <span className="text-xs text-muted-foreground" data-testid={`text-task-area-${task.id}`}>{task.projectArea}</span>
+                    {task.assignedRole && (
                       <>
                         <span className="text-xs text-muted-foreground">|</span>
-                        <span className="text-xs text-muted-foreground">{companies.find((c: any) => c.id === task.companyId)?.name}</span>
+                        <span className="text-xs text-muted-foreground flex items-center gap-1" data-testid={`text-task-role-${task.id}`}>
+                          <User className="w-3 h-3" /> {task.assignedRole}
+                        </span>
                       </>
                     )}
                   </div>
                 </div>
                 <div className="flex items-center gap-2 flex-wrap" onClick={e => e.stopPropagation()}>
-                  <Badge variant="outline" className={`capitalize text-xs ${sc.color}`}>
+                  <Badge variant="outline" className={`capitalize text-xs ${priorityColors[task.priority] || ""}`} data-testid={`badge-priority-${task.id}`}>
+                    {task.priority}
+                  </Badge>
+                  {task.difficulty && (
+                    <Badge variant="outline" className={`capitalize text-xs ${difficultyColors[task.difficulty] || ""}`} data-testid={`badge-difficulty-${task.id}`}>
+                      {task.difficulty}
+                    </Badge>
+                  )}
+                  <Badge variant="outline" className={`capitalize text-xs ${sc.color}`} data-testid={`badge-status-${task.id}`}>
                     <StatusIcon className="w-3 h-3 mr-1" />
                     {sc.label}
                   </Badge>
-                  <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => openEdit(task)} data-testid={`button-edit-task-${task.id}`}>
+                  <Button variant="outline" size="icon" onClick={() => openEdit(task)} data-testid={`button-edit-task-${task.id}`}>
                     <Pencil className="w-3.5 h-3.5" />
                   </Button>
-                  <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => handleDelete(task.id)} data-testid={`button-delete-task-${task.id}`}>
+                  <Button variant="outline" size="icon" onClick={() => handleDelete(task.id)} data-testid={`button-delete-task-${task.id}`}>
                     <Trash2 className="w-3.5 h-3.5 text-destructive" />
                   </Button>
                 </div>
@@ -181,10 +250,16 @@ export default function ManageTasks() {
             </Card>
           );
         })}
+        {tasks.length === 0 && (
+          <div className="text-center py-16 text-muted-foreground">
+            <ListChecks className="w-12 h-12 mx-auto mb-3 opacity-30" />
+            <p className="text-sm font-medium">No tasks yet</p>
+          </div>
+        )}
       </div>
 
       {detailTask && (
-        <TaskDetailDialog
+        <TaskDetailPopup
           task={detailTask}
           companies={companies}
           onClose={() => setDetailTask(null)}
@@ -208,6 +283,10 @@ export default function ManageTasks() {
                 <label className="text-sm font-semibold">Description *</label>
                 <Textarea value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} rows={4} data-testid="input-task-description" />
               </div>
+              <div className="space-y-2 md:col-span-2">
+                <label className="text-sm font-semibold">Business Context</label>
+                <Textarea value={form.businessContext} onChange={e => setForm(f => ({ ...f, businessContext: e.target.value }))} rows={3} placeholder="Why is this task important for the business?" data-testid="input-business-context" />
+              </div>
               <div className="space-y-2">
                 <label className="text-sm font-semibold">Requested By *</label>
                 <Input value={form.requestedBy} onChange={e => setForm(f => ({ ...f, requestedBy: e.target.value }))} data-testid="input-requested-by" />
@@ -215,6 +294,22 @@ export default function ManageTasks() {
               <div className="space-y-2">
                 <label className="text-sm font-semibold">Recommended Role</label>
                 <Input value={form.recommendedRole} onChange={e => setForm(f => ({ ...f, recommendedRole: e.target.value }))} data-testid="input-recommended-role" />
+              </div>
+              <div className="space-y-2">
+                <label className="text-sm font-semibold">Assigned Role</label>
+                <Input value={form.assignedRole} onChange={e => setForm(f => ({ ...f, assignedRole: e.target.value }))} placeholder="e.g. Frontend Engineer" data-testid="input-assigned-role" />
+              </div>
+              <div className="space-y-2">
+                <label className="text-sm font-semibold">Difficulty</label>
+                <Select value={form.difficulty || "medium"} onValueChange={v => setForm(f => ({ ...f, difficulty: v }))}>
+                  <SelectTrigger data-testid="select-difficulty"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="easy">Easy</SelectItem>
+                    <SelectItem value="medium">Medium</SelectItem>
+                    <SelectItem value="hard">Hard</SelectItem>
+                    <SelectItem value="expert">Expert</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
               <div className="space-y-2">
                 <label className="text-sm font-semibold">Priority</label>
@@ -255,6 +350,29 @@ export default function ManageTasks() {
                   </SelectContent>
                 </Select>
               </div>
+              <div className="space-y-2">
+                <label className="text-sm font-semibold">Milestone ID</label>
+                <Input
+                  type="number"
+                  value={form.milestoneId}
+                  onChange={e => setForm(f => ({ ...f, milestoneId: e.target.value }))}
+                  placeholder="Optional milestone ID"
+                  data-testid="input-milestone-id"
+                />
+              </div>
+            </div>
+            <div className="border-t border-border/50 pt-4">
+              <p className="text-sm font-semibold mb-3 text-muted-foreground">Subtasks & Deliverables</p>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <label className="text-sm font-semibold">Subtasks (one per line)</label>
+                  <Textarea value={form.subtasks} onChange={e => setForm(f => ({ ...f, subtasks: e.target.value }))} rows={4} placeholder="Subtask 1&#10;Subtask 2&#10;Subtask 3" data-testid="input-subtasks" />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm font-semibold">Deliverables (one per line)</label>
+                  <Textarea value={form.deliverables} onChange={e => setForm(f => ({ ...f, deliverables: e.target.value }))} rows={4} placeholder="Deliverable 1&#10;Deliverable 2" data-testid="input-deliverables" />
+                </div>
+              </div>
             </div>
             <div className="border-t border-border/50 pt-4">
               <p className="text-sm font-semibold mb-3 text-muted-foreground">Work Details</p>
@@ -293,428 +411,194 @@ export default function ManageTasks() {
   );
 }
 
-function TaskDetailDialog({ task, companies, onClose, onCloseTask, onReopenTask }: {
+function TaskDetailPopup({ task, companies, onClose, onCloseTask, onReopenTask }: {
   task: any;
   companies: any[];
   onClose: () => void;
   onCloseTask: () => void;
   onReopenTask: () => void;
 }) {
-  const { data: logs = [], isLoading: logsLoading } = useTaskLogs(task.id);
-  const submitTask = useSubmitTask();
-  const uploadFiles = useUploadFiles();
+  const updateProgress = useUpdateProgress();
+  const generateTask = useGenerateTask();
   const { toast } = useToast();
-  const chatEndRef = useRef<HTMLDivElement>(null);
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const [submissionContent, setSubmissionContent] = useState("");
-  const [submissionGithub, setSubmissionGithub] = useState("");
-  const [submissionScreenshot, setSubmissionScreenshot] = useState("");
-  const [submissionFile, setSubmissionFile] = useState("");
-  const [showAttachments, setShowAttachments] = useState(false);
-  const [uploadedFiles, setUploadedFiles] = useState<{ url: string; name: string; size: number; type: string }[]>([]);
-  const [isDragging, setIsDragging] = useState(false);
+  const [progressNotes, setProgressNotes] = useState(task.progressNotes || "");
 
   const companyName = task.companyId ? companies.find((c: any) => c.id === task.companyId)?.name : null;
+  const subtasks = parseJsonArray(task.subtasks);
+  const deliverables = parseJsonArray(task.deliverables);
+  const sc = statusConfig[task.status] || statusConfig.backlog;
+  const StatusIcon = sc.icon;
 
-  useEffect(() => {
-    chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [logs]);
-
-  const insertMarkdown = (prefix: string, suffix: string = "") => {
-    const ta = textareaRef.current;
-    if (!ta) return;
-    const start = ta.selectionStart;
-    const end = ta.selectionEnd;
-    const selected = submissionContent.slice(start, end);
-    const newText = submissionContent.slice(0, start) + prefix + selected + suffix + submissionContent.slice(end);
-    setSubmissionContent(newText);
-    setTimeout(() => {
-      ta.focus();
-      ta.setSelectionRange(start + prefix.length, start + prefix.length + selected.length);
-    }, 0);
+  const handleSaveProgress = async () => {
+    try {
+      await updateProgress.mutateAsync({ id: task.id, progressNotes });
+      toast({ title: "Progress notes saved." });
+    } catch {
+      toast({ title: "Failed to save progress.", variant: "destructive" });
+    }
   };
 
-  const handleFileUpload = useCallback(async (files: File[]) => {
-    if (files.length === 0) return;
+  const handleGenerateNext = async () => {
     try {
-      const result = await uploadFiles.mutateAsync(files);
-      setUploadedFiles(prev => [...prev, ...result.files]);
-      const fileRefs = result.files.map(f => {
-        if (f.type.startsWith("image/")) return `![${f.name}](${f.url})`;
-        return `[${f.name}](${f.url})`;
-      }).join("\n");
-      setSubmissionContent(prev => prev ? prev + "\n\n" + fileRefs : fileRefs);
-      toast({ title: `${result.files.length} file(s) uploaded` });
-    } catch {
-      toast({ title: "File upload failed", variant: "destructive" });
-    }
-  }, [uploadFiles, toast]);
-
-  const handleDrop = useCallback((e: React.DragEvent) => {
-    e.preventDefault();
-    setIsDragging(false);
-    const files = Array.from(e.dataTransfer.files);
-    if (files.length) handleFileUpload(files);
-  }, [handleFileUpload]);
-
-  const handleDragOver = useCallback((e: React.DragEvent) => {
-    e.preventDefault();
-    setIsDragging(true);
-  }, []);
-
-  const handleDragLeave = useCallback(() => setIsDragging(false), []);
-
-  const handleSubmit = async () => {
-    if (!submissionContent.trim()) {
-      toast({ title: "Please describe your work.", variant: "destructive" });
-      return;
-    }
-    try {
-      const fileUrls = uploadedFiles.map(f => f.url);
-      await submitTask.mutateAsync({
-        id: task.id,
-        content: submissionContent,
-        ...(submissionGithub ? { githubLink: submissionGithub } : {}),
-        ...(submissionScreenshot ? { screenshotUrl: submissionScreenshot } : {}),
-        ...(submissionFile || fileUrls.length ? { fileUrl: submissionFile || fileUrls.join(", ") } : {}),
+      await generateTask.mutateAsync({
+        companyId: task.companyId || undefined,
+        milestoneId: task.milestoneId || undefined,
+        progressContext: progressNotes || undefined,
       });
-      setSubmissionContent("");
-      setSubmissionGithub("");
-      setSubmissionScreenshot("");
-      setSubmissionFile("");
-      setShowAttachments(false);
-      setUploadedFiles([]);
+      toast({ title: "Next task generated successfully." });
     } catch {
-      toast({ title: "Failed to submit. Check your AI settings.", variant: "destructive" });
+      toast({ title: "Failed to generate task.", variant: "destructive" });
     }
   };
 
   return (
     <Dialog open={true} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="sm:max-w-3xl max-h-[90vh] flex flex-col p-0 gap-0">
-        <div className="p-6 pb-4 border-b border-border/50">
-          <div className="flex items-start justify-between gap-3">
-            <div className="flex-1 min-w-0">
-              <DialogHeader>
-                <DialogTitle className="font-display text-lg pr-8" data-testid="detail-task-title">{task.title}</DialogTitle>
-              </DialogHeader>
-              <div className="flex items-center gap-2 mt-2 flex-wrap">
-                {companyName && <Badge variant="outline" className="text-xs">{companyName}</Badge>}
-                <Badge variant="outline" className="text-xs">{task.projectArea}</Badge>
-                <Badge variant="outline" className="text-xs capitalize">{task.priority}</Badge>
-                <Badge variant="outline" className={`text-xs ${task.status === "completed" ? "bg-emerald-500/10 text-emerald-600 border-emerald-500/20" : task.status === "in_progress" ? "bg-blue-500/10 text-blue-600 border-blue-500/20" : ""}`}>
-                  {task.status === "completed" ? "Closed" : task.status === "in_progress" ? "Active" : "Backlog"}
-                </Badge>
-              </div>
-            </div>
-            <div className="flex gap-2 shrink-0">
-              {task.status !== "completed" ? (
-                <Button variant="outline" size="sm" className="text-xs gap-1" onClick={onCloseTask} data-testid="button-close-task">
-                  <CheckCircle className="w-3.5 h-3.5" /> Close Task
-                </Button>
-              ) : (
-                <Button variant="outline" size="sm" className="text-xs gap-1" onClick={onReopenTask} data-testid="button-reopen-task">
-                  <XCircle className="w-3.5 h-3.5" /> Reopen
-                </Button>
-              )}
-            </div>
-          </div>
-          <p className="text-sm text-muted-foreground mt-3">{task.description}</p>
-          <div className="flex items-center gap-3 mt-3 text-xs text-muted-foreground flex-wrap">
-            <span>By: <span className="font-medium text-foreground">{task.requestedBy}</span></span>
-            {task.recommendedRole && <span>Role: <span className="font-medium text-foreground">{task.recommendedRole}</span></span>}
-            {task.githubLink && (
-              <a href={task.githubLink} target="_blank" rel="noreferrer" className="text-primary hover:underline flex items-center gap-1">
-                <GitBranch className="w-3 h-3" /> GitHub
-              </a>
-            )}
-            {task.documentationLink && (
-              <a href={task.documentationLink} target="_blank" rel="noreferrer" className="text-primary hover:underline flex items-center gap-1">
-                <ExternalLink className="w-3 h-3" /> Docs
-              </a>
-            )}
-          </div>
-        </div>
+      <DialogContent className="sm:max-w-3xl max-h-[90vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle className="font-display text-lg pr-8" data-testid="detail-task-title">{task.title}</DialogTitle>
+        </DialogHeader>
 
-        <div className="flex-1 overflow-y-auto p-6 space-y-4 min-h-[200px] max-h-[400px]" data-testid="conversation-log">
-          {logsLoading && (
-            <div className="flex justify-center py-8">
-              <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
-            </div>
+        <div className="flex items-center gap-2 flex-wrap">
+          <Badge variant="outline" className={`capitalize text-xs ${sc.color}`} data-testid="detail-status-badge">
+            <StatusIcon className="w-3 h-3 mr-1" />
+            {sc.label}
+          </Badge>
+          <Badge variant="outline" className={`capitalize text-xs ${priorityColors[task.priority] || ""}`} data-testid="detail-priority-badge">
+            {task.priority}
+          </Badge>
+          {task.difficulty && (
+            <Badge variant="outline" className={`capitalize text-xs ${difficultyColors[task.difficulty] || ""}`} data-testid="detail-difficulty-badge">
+              {task.difficulty}
+            </Badge>
           )}
-          {!logsLoading && logs.length === 0 && (
-            <div className="text-center py-10 text-muted-foreground">
-              <MessageCircle className="w-10 h-10 mx-auto mb-3 opacity-30" />
-              <p className="text-sm font-medium">No submissions yet</p>
-              <p className="text-xs mt-1">Submit your work below to start an AI review conversation.</p>
-            </div>
+          {companyName && (
+            <Badge variant="outline" className="text-xs" data-testid="detail-company-badge">{companyName}</Badge>
           )}
-          {logs.map((log: TaskLog) => (
-            <LogEntry key={log.id} log={log} />
-          ))}
-          <div ref={chatEndRef} />
-        </div>
-
-        {task.status !== "completed" && (
-          <div
-            className={`border-t border-border/50 p-4 bg-card/50 transition-colors ${isDragging ? "bg-primary/5 border-primary/30" : ""}`}
-            data-testid="submission-area"
-            onDrop={handleDrop}
-            onDragOver={handleDragOver}
-            onDragLeave={handleDragLeave}
-          >
-            <input
-              ref={fileInputRef}
-              type="file"
-              multiple
-              accept=".jpg,.jpeg,.png,.gif,.webp,.pdf,.txt,.md,.sql,.py,.ts,.js,.json,.csv,.xlsx,.zip"
-              className="hidden"
-              onChange={e => {
-                const files = Array.from(e.target.files || []);
-                if (files.length) handleFileUpload(files);
-                e.target.value = "";
-              }}
-              data-testid="input-file-upload"
-            />
-            <div className="space-y-3">
-              <div className="flex items-center gap-1 border-b border-border/30 pb-2">
-                <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={() => insertMarkdown("**", "**")} title="Bold" data-testid="button-md-bold">
-                  <Bold className="w-3.5 h-3.5" />
-                </Button>
-                <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={() => insertMarkdown("*", "*")} title="Italic" data-testid="button-md-italic">
-                  <Italic className="w-3.5 h-3.5" />
-                </Button>
-                <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={() => insertMarkdown("`", "`")} title="Inline code" data-testid="button-md-code">
-                  <Code className="w-3.5 h-3.5" />
-                </Button>
-                <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={() => insertMarkdown("```\n", "\n```")} title="Code block" data-testid="button-md-codeblock">
-                  <Code className="w-3.5 h-3.5 text-primary" />
-                </Button>
-                <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={() => insertMarkdown("- ")} title="List" data-testid="button-md-list">
-                  <List className="w-3.5 h-3.5" />
-                </Button>
-                <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={() => insertMarkdown("[", "](url)")} title="Link" data-testid="button-md-link">
-                  <Link className="w-3.5 h-3.5" />
-                </Button>
-                <div className="flex-1" />
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="h-7 px-2 text-xs gap-1 text-muted-foreground"
-                  onClick={() => fileInputRef.current?.click()}
-                  disabled={uploadFiles.isPending}
-                  data-testid="button-upload-file"
-                >
-                  {uploadFiles.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <Upload className="w-3 h-3" />}
-                  Upload
-                </Button>
-              </div>
-
-              <Textarea
-                ref={textareaRef}
-                value={submissionContent}
-                onChange={e => setSubmissionContent(e.target.value)}
-                placeholder="Describe your work using Markdown... drag & drop files here"
-                rows={4}
-                className="resize-none font-mono text-sm"
-                data-testid="input-submission-content"
-              />
-
-              {uploadedFiles.length > 0 && (
-                <div className="flex items-center gap-2 flex-wrap">
-                  {uploadedFiles.map((f, i) => (
-                    <Badge key={i} variant="secondary" className="text-xs gap-1 py-1">
-                      <Paperclip className="w-3 h-3" />
-                      {f.name}
-                      <button
-                        className="ml-1 hover:text-destructive"
-                        onClick={() => setUploadedFiles(prev => prev.filter((_, idx) => idx !== i))}
-                      >
-                        <XCircle className="w-3 h-3" />
-                      </button>
-                    </Badge>
-                  ))}
-                </div>
-              )}
-
-              {isDragging && (
-                <div className="border-2 border-dashed border-primary/40 rounded-lg p-6 text-center bg-primary/5">
-                  <Upload className="w-6 h-6 mx-auto text-primary/60 mb-1" />
-                  <p className="text-xs text-primary/60 font-medium">Drop files here to upload</p>
-                </div>
-              )}
-
-              {showAttachments && (
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                  <div className="flex items-center gap-1.5">
-                    <GitBranch className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
-                    <Input
-                      value={submissionGithub}
-                      onChange={e => setSubmissionGithub(e.target.value)}
-                      placeholder="GitHub link..."
-                      className="h-8 text-xs"
-                      data-testid="input-submission-github"
-                    />
-                  </div>
-                  <div className="flex items-center gap-1.5">
-                    <Image className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
-                    <Input
-                      value={submissionScreenshot}
-                      onChange={e => setSubmissionScreenshot(e.target.value)}
-                      placeholder="Screenshot URL..."
-                      className="h-8 text-xs"
-                      data-testid="input-submission-screenshot"
-                    />
-                  </div>
-                  <div className="flex items-center gap-1.5">
-                    <FileText className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
-                    <Input
-                      value={submissionFile}
-                      onChange={e => setSubmissionFile(e.target.value)}
-                      placeholder="File URL..."
-                      className="h-8 text-xs"
-                      data-testid="input-submission-file"
-                    />
-                  </div>
-                </div>
-              )}
-
-              <div className="flex items-center justify-between gap-2">
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="text-xs text-muted-foreground gap-1"
-                  onClick={() => setShowAttachments(!showAttachments)}
-                  data-testid="button-toggle-attachments"
-                >
-                  <GitBranch className="w-3 h-3" />
-                  {showAttachments ? "Hide links" : "Add links"}
-                </Button>
-                <Button
-                  size="sm"
-                  className="gap-1.5"
-                  onClick={handleSubmit}
-                  disabled={submitTask.isPending || !submissionContent.trim()}
-                  data-testid="button-submit-review"
-                >
-                  {submitTask.isPending ? (
-                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                  ) : (
-                    <Send className="w-3.5 h-3.5" />
-                  )}
-                  Submit for AI Review
-                </Button>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {task.status === "completed" && (
-          <div className="border-t border-border/50 p-4 bg-emerald-500/5 text-center">
-            <p className="text-sm text-emerald-600 font-medium flex items-center justify-center gap-1.5">
-              <CheckCircle className="w-4 h-4" /> This task is closed
-            </p>
-          </div>
-        )}
-      </DialogContent>
-    </Dialog>
-  );
-}
-
-function LogEntry({ log }: { log: TaskLog }) {
-  const isUser = log.role === "user";
-  const timestamp = new Date(log.createdAt).toLocaleString();
-  let attachments: Record<string, string> = {};
-  if (log.attachments) {
-    try { attachments = JSON.parse(log.attachments); } catch {}
-  }
-
-  if (isUser) {
-    return (
-      <div className="flex gap-3" data-testid={`log-entry-${log.id}`}>
-        <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center shrink-0 mt-0.5">
-          <User className="w-4 h-4 text-primary" />
-        </div>
-        <div className="flex-1">
-          <div className="flex items-center gap-2 mb-1">
-            <span className="text-xs font-semibold">You</span>
-            <span className="text-[10px] text-muted-foreground">{timestamp}</span>
-          </div>
-          <div className="bg-primary/5 border border-primary/10 rounded-lg p-3">
-            <div className="text-sm prose prose-sm max-w-none dark:prose-invert prose-p:my-1 prose-pre:bg-secondary prose-pre:text-foreground prose-code:text-primary prose-headings:text-foreground prose-a:text-primary">
-              <ReactMarkdown remarkPlugins={[remarkGfm]}>{log.content}</ReactMarkdown>
-            </div>
-            {Object.keys(attachments).length > 0 && (
-              <div className="flex items-center gap-3 mt-2 pt-2 border-t border-primary/10 flex-wrap">
-                {attachments.githubLink && (
-                  <a href={attachments.githubLink} target="_blank" rel="noreferrer" className="text-xs text-primary hover:underline flex items-center gap-1">
-                    <GitBranch className="w-3 h-3" /> GitHub
-                  </a>
-                )}
-                {attachments.screenshotUrl && (
-                  <a href={attachments.screenshotUrl} target="_blank" rel="noreferrer" className="text-xs text-primary hover:underline flex items-center gap-1">
-                    <Image className="w-3 h-3" /> Screenshot
-                  </a>
-                )}
-                {attachments.fileUrl && (
-                  <a href={attachments.fileUrl} target="_blank" rel="noreferrer" className="text-xs text-primary hover:underline flex items-center gap-1">
-                    <FileText className="w-3 h-3" /> File
-                  </a>
-                )}
-              </div>
-            )}
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  let aiData: any = {};
-  try { aiData = JSON.parse(log.content); } catch { aiData = { feedback: log.content }; }
-
-  return (
-    <div className="flex gap-3" data-testid={`log-entry-${log.id}`}>
-      <div className="w-8 h-8 rounded-full bg-purple-500/10 flex items-center justify-center shrink-0 mt-0.5">
-        <Bot className="w-4 h-4 text-purple-500" />
-      </div>
-      <div className="flex-1">
-        <div className="flex items-center gap-2 mb-1">
-          <span className="text-xs font-semibold">AI Reviewer</span>
-          <span className="text-[10px] text-muted-foreground">{timestamp}</span>
-          {aiData.score !== undefined && (
-            <span className="flex items-center gap-0.5 text-xs">
-              <Star className="w-3 h-3 text-amber-500 fill-amber-500" />
-              <span className="font-bold">{aiData.score}</span>
-              <span className="text-muted-foreground">/10</span>
-            </span>
-          )}
-          {aiData.readyToClose && (
-            <Badge variant="outline" className="text-[10px] bg-emerald-500/10 text-emerald-600 border-emerald-500/20">Ready to close</Badge>
+          <Badge variant="outline" className="text-xs" data-testid="detail-area-badge">{task.projectArea}</Badge>
+          {task.assignedRole && (
+            <Badge variant="outline" className="text-xs" data-testid="detail-role-badge">
+              <User className="w-3 h-3 mr-1" /> {task.assignedRole}
+            </Badge>
           )}
         </div>
-        <div className="bg-secondary/50 border border-border/50 rounded-lg p-3">
-          <div className="text-sm prose prose-sm max-w-none dark:prose-invert prose-p:my-1 prose-pre:bg-background prose-pre:text-foreground prose-code:text-primary prose-headings:text-foreground prose-a:text-primary">
-            <ReactMarkdown remarkPlugins={[remarkGfm]}>{aiData.feedback || aiData.summary || log.content}</ReactMarkdown>
+
+        <div className="space-y-5 mt-2">
+          <div>
+            <p className="text-sm font-semibold text-muted-foreground mb-1">Description</p>
+            <p className="text-sm" data-testid="detail-description">{task.description}</p>
           </div>
-          {aiData.actionItems?.length > 0 && (
-            <div className="mt-3 pt-2 border-t border-border/50">
-              <p className="text-[11px] font-semibold text-muted-foreground mb-1.5 flex items-center gap-1">
-                <Sparkles className="w-3 h-3" /> Action Items
+
+          {task.businessContext && (
+            <div>
+              <p className="text-sm font-semibold text-muted-foreground mb-1">Business Context</p>
+              <p className="text-sm" data-testid="detail-business-context">{task.businessContext}</p>
+            </div>
+          )}
+
+          {subtasks.length > 0 && (
+            <div>
+              <p className="text-sm font-semibold text-muted-foreground mb-2 flex items-center gap-1">
+                <ListChecks className="w-4 h-4" /> Subtasks
               </p>
-              <ul className="space-y-1">
-                {aiData.actionItems.map((item: string, i: number) => (
-                  <li key={i} className="text-xs text-foreground/80 flex gap-1.5">
-                    <span className="text-muted-foreground shrink-0">-</span>
-                    {item}
-                  </li>
+              <div className="space-y-1.5" data-testid="detail-subtasks">
+                {subtasks.map((st, i) => (
+                  <div key={i} className="flex items-start gap-2 text-sm">
+                    <div className="w-4 h-4 mt-0.5 rounded border border-border/80 shrink-0 flex items-center justify-center">
+                      <span className="text-[10px] text-muted-foreground">{i + 1}</span>
+                    </div>
+                    <span>{st}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {deliverables.length > 0 && (
+            <div>
+              <p className="text-sm font-semibold text-muted-foreground mb-2 flex items-center gap-1">
+                <FileText className="w-4 h-4" /> Deliverables
+              </p>
+              <ul className="space-y-1 text-sm list-disc pl-5" data-testid="detail-deliverables">
+                {deliverables.map((d, i) => (
+                  <li key={i}>{d}</li>
                 ))}
               </ul>
             </div>
           )}
+
+          {(task.githubLink || task.documentationLink) && (
+            <div className="flex items-center gap-4 flex-wrap">
+              {task.githubLink && (
+                <a href={task.githubLink} target="_blank" rel="noreferrer" className="text-sm text-primary hover:underline flex items-center gap-1" data-testid="detail-github-link">
+                  <GitBranch className="w-3.5 h-3.5" /> GitHub
+                </a>
+              )}
+              {task.documentationLink && (
+                <a href={task.documentationLink} target="_blank" rel="noreferrer" className="text-sm text-primary hover:underline flex items-center gap-1" data-testid="detail-docs-link">
+                  <ExternalLink className="w-3.5 h-3.5" /> Documentation
+                </a>
+              )}
+            </div>
+          )}
+
+          {task.solutionNotes && (
+            <div>
+              <p className="text-sm font-semibold text-muted-foreground mb-1">Solution Notes</p>
+              <p className="text-sm whitespace-pre-wrap" data-testid="detail-solution-notes">{task.solutionNotes}</p>
+            </div>
+          )}
+
+          {task.architectureNotes && (
+            <div>
+              <p className="text-sm font-semibold text-muted-foreground mb-1">Architecture Notes</p>
+              <p className="text-sm whitespace-pre-wrap" data-testid="detail-architecture-notes">{task.architectureNotes}</p>
+            </div>
+          )}
+
+          <div className="border-t border-border/50 pt-4">
+            <p className="text-sm font-semibold text-muted-foreground mb-2">Progress Notes</p>
+            <Textarea
+              value={progressNotes}
+              onChange={e => setProgressNotes(e.target.value)}
+              rows={4}
+              placeholder="Track progress, blockers, and updates here..."
+              data-testid="input-progress-notes"
+            />
+            <div className="flex items-center gap-2 mt-3 flex-wrap">
+              <Button
+                onClick={handleSaveProgress}
+                disabled={updateProgress.isPending}
+                data-testid="button-save-progress"
+              >
+                {updateProgress.isPending ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Save className="w-4 h-4 mr-2" />}
+                Save Progress
+              </Button>
+              <Button
+                variant="outline"
+                onClick={handleGenerateNext}
+                disabled={generateTask.isPending}
+                data-testid="button-generate-next-task"
+              >
+                {generateTask.isPending ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Sparkles className="w-4 h-4 mr-2" />}
+                Generate Next Task
+              </Button>
+            </div>
+          </div>
         </div>
-      </div>
-    </div>
+
+        <DialogFooter className="gap-2">
+          {task.status !== "completed" ? (
+            <Button variant="outline" onClick={onCloseTask} data-testid="button-close-task">
+              <CheckCircle className="w-4 h-4 mr-2" /> Close Task
+            </Button>
+          ) : (
+            <Button variant="outline" onClick={onReopenTask} data-testid="button-reopen-task">
+              <XCircle className="w-4 h-4 mr-2" /> Reopen
+            </Button>
+          )}
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }

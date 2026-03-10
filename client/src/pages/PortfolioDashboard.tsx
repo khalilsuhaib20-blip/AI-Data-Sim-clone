@@ -1,15 +1,26 @@
 import { useState, useMemo } from "react";
 import { useTasks } from "@/hooks/use-tasks";
-import { useCompanies } from "@/hooks/use-companies";
+import { useCompanies, useRoadmap } from "@/hooks/use-companies";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   Loader2, Building2, Users, Briefcase, CheckCircle, Clock, ArrowLeft,
-  Mail, GitBranch, Wrench, BarChart3, TrendingUp, FileText, ChevronRight
+  Mail, GitBranch, Wrench, BarChart3, TrendingUp, FileText, ChevronRight,
+  Cpu, Layers, Target, ChevronDown, ChevronUp
 } from "lucide-react";
 import { TimelineView } from "@/components/views/TimelineView";
 import { ContactModal } from "@/components/ContactModal";
 import type { Task, Company } from "@shared/schema";
+
+function parseJsonArray(val: string | null | undefined): string[] {
+  if (!val) return [];
+  try {
+    const parsed = JSON.parse(val);
+    return Array.isArray(parsed) ? parsed : [val];
+  } catch {
+    return val.includes(",") ? val.split(",").map(s => s.trim()).filter(Boolean) : [val];
+  }
+}
 
 export default function PortfolioDashboard() {
   const { data: tasks = [], isLoading: tasksLoading } = useTasks();
@@ -31,8 +42,12 @@ export default function PortfolioDashboard() {
       companyTasks.forEach((t: Task) => {
         if (t.requestedBy) roles.add(t.requestedBy);
         if (t.recommendedRole) roles.add(t.recommendedRole);
+        if (t.assignedRole) roles.add(t.assignedRole);
         areas.add(t.projectArea);
       });
+      const companyRoles = parseJsonArray(c.roles);
+      companyRoles.forEach(r => roles.add(r));
+      const techStack = parseJsonArray(c.techStack);
       return {
         ...c,
         taskCount: companyTasks.length,
@@ -41,6 +56,8 @@ export default function PortfolioDashboard() {
         roles: Array.from(roles),
         areas: Array.from(areas),
         tasks: companyTasks,
+        techStackParsed: techStack,
+        phasesParsed: parseJsonArray(c.phases),
       };
     });
   }, [companies, tasks]);
@@ -58,15 +75,18 @@ export default function PortfolioDashboard() {
     tasks.forEach((t: Task) => {
       if (t.requestedBy) allRoles.add(t.requestedBy);
       if (t.recommendedRole) allRoles.add(t.recommendedRole);
+      if (t.assignedRole) allRoles.add(t.assignedRole);
       allAreas.add(t.projectArea);
-      if (t.solutionNotes) {
-        const toolMatches = t.solutionNotes.match(/(?:Apache\s+)?\b(?:Kafka|Flink|Spark|dbt|Snowflake|Fivetran|MLflow|Kubernetes|Evidently|Docker|Airflow|PostgreSQL|Python|SQL|Pandas|TensorFlow|PyTorch|Scikit-learn|AWS|GCP|Azure|BigQuery|Redshift|Looker|Tableau|Power BI|Databricks|Delta Lake|Great Expectations)\b/gi);
-        if (toolMatches) toolMatches.forEach(t => allTools.add(t));
-      }
-      if (t.architectureNotes) {
-        const toolMatches = t.architectureNotes.match(/(?:Apache\s+)?\b(?:Kafka|Flink|Spark|dbt|Snowflake|Fivetran|MLflow|Kubernetes|Evidently|Docker|Airflow|PostgreSQL|Python|SQL|Pandas|TensorFlow|PyTorch|Scikit-learn|AWS|GCP|Azure|BigQuery|Redshift|Looker|Tableau|Power BI|Databricks|Delta Lake|Great Expectations)\b/gi);
-        if (toolMatches) toolMatches.forEach(t => allTools.add(t));
-      }
+      [t.solutionNotes, t.architectureNotes].forEach(notes => {
+        if (notes) {
+          const toolMatches = notes.match(/(?:Apache\s+)?\b(?:Kafka|Flink|Spark|dbt|Snowflake|Fivetran|MLflow|Kubernetes|Evidently|Docker|Airflow|PostgreSQL|Python|SQL|Pandas|TensorFlow|PyTorch|Scikit-learn|AWS|GCP|Azure|BigQuery|Redshift|Looker|Tableau|Power BI|Databricks|Delta Lake|Great Expectations)\b/gi);
+          if (toolMatches) toolMatches.forEach(t => allTools.add(t));
+        }
+      });
+    });
+    companies.forEach((c: Company) => {
+      const ts = parseJsonArray(c.techStack);
+      ts.forEach(t => allTools.add(t));
     });
     return {
       totalTasks: tasks.length,
@@ -93,52 +113,7 @@ export default function PortfolioDashboard() {
   }
 
   if (selectedProjectData) {
-    return (
-      <div className="flex-1 flex flex-col">
-        <div className="border-b border-border/40 bg-card/50">
-          <div className="max-w-[1200px] mx-auto px-4 sm:px-6 lg:px-8 py-5">
-            <Button variant="ghost" size="sm" className="mb-3 text-muted-foreground -ml-2" onClick={() => setSelectedProject(null)} data-testid="button-back-projects">
-              <ArrowLeft className="w-4 h-4 mr-1.5" /> Back to Projects
-            </Button>
-            <div className="flex items-start justify-between gap-4 flex-wrap">
-              <div className="flex items-center gap-4">
-                <div className="w-12 h-12 rounded-2xl bg-primary/10 flex items-center justify-center">
-                  <Building2 className="w-6 h-6 text-primary" />
-                </div>
-                <div>
-                  <div className="flex items-center gap-3">
-                    <h1 className="text-2xl font-display font-bold" data-testid="text-project-name">{selectedProjectData.name}</h1>
-                    {selectedProjectData.githubLink && (
-                      <a href={selectedProjectData.githubLink} target="_blank" rel="noreferrer" className="text-muted-foreground hover:text-primary transition-colors" data-testid="project-detail-github">
-                        <GitBranch className="w-5 h-5" />
-                      </a>
-                    )}
-                  </div>
-                  <div className="flex items-center gap-2 mt-1 flex-wrap">
-                    <span className="text-sm text-muted-foreground font-medium">{selectedProjectData.industry}</span>
-                    <Badge variant={selectedProjectData.status === "active" ? "default" : "secondary"} className="capitalize text-xs">{selectedProjectData.status}</Badge>
-                  </div>
-                </div>
-              </div>
-              <div className="flex items-center gap-4 text-sm">
-                <span className="font-semibold">{selectedProjectData.taskCount} <span className="font-normal text-muted-foreground">tasks</span></span>
-                <span className="text-emerald-600 font-semibold">{selectedProjectData.completedCount} <span className="font-normal text-muted-foreground">done</span></span>
-                <span className="text-blue-600 font-semibold">{selectedProjectData.inProgressCount} <span className="font-normal text-muted-foreground">active</span></span>
-              </div>
-            </div>
-            <p className="text-sm text-muted-foreground mt-3 max-w-3xl">{selectedProjectData.description}</p>
-          </div>
-        </div>
-        <div className="flex-1 max-w-[1200px] w-full mx-auto px-4 sm:px-6 lg:px-8 py-6">
-          {selectedProjectData.tasks.length > 0 ? (
-            <TimelineView tasks={selectedProjectData.tasks} companyMap={companyMap} onContact={setContactTask} />
-          ) : (
-            <p className="text-center text-muted-foreground py-16">No tasks yet for this project.</p>
-          )}
-        </div>
-        <ContactModal task={contactTask} onClose={() => setContactTask(null)} />
-      </div>
-    );
+    return <ProjectDetail project={selectedProjectData} companyMap={companyMap} contactTask={contactTask} setContactTask={setContactTask} onBack={() => setSelectedProject(null)} />;
   }
 
   return (
@@ -170,14 +145,7 @@ export default function PortfolioDashboard() {
                 </div>
                 <div className="flex items-center gap-2">
                   {project.githubLink && (
-                    <a
-                      href={project.githubLink}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="text-muted-foreground hover:text-primary transition-colors"
-                      onClick={e => e.stopPropagation()}
-                      data-testid={`project-github-${project.id}`}
-                    >
+                    <a href={project.githubLink} target="_blank" rel="noreferrer" className="text-muted-foreground hover:text-primary transition-colors" onClick={e => e.stopPropagation()} data-testid={`project-github-${project.id}`}>
                       <GitBranch className="w-4 h-4" />
                     </a>
                   )}
@@ -205,6 +173,20 @@ export default function PortfolioDashboard() {
                   <p className="text-[10px] text-muted-foreground font-medium">Active</p>
                 </div>
               </div>
+
+              {project.techStackParsed.length > 0 && (
+                <div className="mb-3">
+                  <p className="text-[10px] text-muted-foreground font-semibold uppercase tracking-wider mb-1.5 flex items-center gap-1">
+                    <Cpu className="w-3 h-3" /> Tech Stack
+                  </p>
+                  <div className="flex flex-wrap gap-1">
+                    {project.techStackParsed.slice(0, 5).map((t: string) => (
+                      <Badge key={t} variant="secondary" className="text-[10px] px-1.5 py-0 h-5">{t}</Badge>
+                    ))}
+                    {project.techStackParsed.length > 5 && <Badge variant="secondary" className="text-[10px] px-1.5 py-0 h-5">+{project.techStackParsed.length - 5}</Badge>}
+                  </div>
+                </div>
+              )}
 
               {project.roles.length > 0 && (
                 <div className="mb-3">
@@ -243,45 +225,7 @@ export default function PortfolioDashboard() {
         <SectionHeading icon={<CheckCircle className="w-5 h-5 text-emerald-500" />} title="Completed Work" subtitle="Highlighted tasks that have been delivered" />
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-16">
           {completedTasks.map(task => (
-            <div key={task.id} className="bg-card rounded-xl border border-border/50 border-l-4 border-l-emerald-500 p-5" data-testid={`completed-task-${task.id}`}>
-              <div className="flex items-start justify-between gap-3 mb-2">
-                <h4 className="font-display font-bold text-sm">{task.title}</h4>
-                <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-5 bg-emerald-500/10 text-emerald-600 border-emerald-500/20 shrink-0">
-                  Completed
-                </Badge>
-              </div>
-              <p className="text-xs text-muted-foreground line-clamp-2 mb-3">{task.description}</p>
-              {task.solutionNotes && (
-                <div className="bg-secondary/30 rounded-lg p-3 border border-border/30 mb-3">
-                  <p className="text-[11px] font-semibold text-muted-foreground flex items-center gap-1 mb-1">
-                    <FileText className="w-3 h-3" /> Solution
-                  </p>
-                  <p className="text-xs text-foreground/80">{task.solutionNotes}</p>
-                </div>
-              )}
-              <div className="flex items-center justify-between gap-2">
-                <div className="flex items-center gap-1.5 flex-wrap">
-                  <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-5">{task.projectArea}</Badge>
-                  {task.companyId && companyMap[task.companyId] && (
-                    <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-5">{companyMap[task.companyId]}</Badge>
-                  )}
-                  {task.githubLink && (
-                    <a href={task.githubLink} target="_blank" rel="noreferrer" className="text-emerald-500 hover:text-emerald-600">
-                      <GitBranch className="w-3.5 h-3.5" />
-                    </a>
-                  )}
-                </div>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="h-7 px-2 text-[11px] text-muted-foreground hover:text-primary gap-1"
-                  onClick={() => setContactTask(task)}
-                  data-testid={`button-contact-completed-${task.id}`}
-                >
-                  <Mail className="w-3 h-3" /> Contact
-                </Button>
-              </div>
-            </div>
+            <CompletedTaskCard key={task.id} task={task} companyMap={companyMap} onContact={setContactTask} />
           ))}
           {completedTasks.length === 0 && (
             <p className="text-sm text-muted-foreground col-span-2 text-center py-8">No completed tasks yet.</p>
@@ -304,6 +248,182 @@ export default function PortfolioDashboard() {
       </div>
 
       <ContactModal task={contactTask} onClose={() => setContactTask(null)} />
+    </div>
+  );
+}
+
+function ProjectDetail({ project, companyMap, contactTask, setContactTask, onBack }: {
+  project: any;
+  companyMap: Record<number, string>;
+  contactTask: Task | null;
+  setContactTask: (t: Task | null) => void;
+  onBack: () => void;
+}) {
+  const [showRoadmap, setShowRoadmap] = useState(false);
+  const { data: roadmap = [] } = useRoadmap(project.id);
+  const phases = [...new Set(roadmap.map((r: any) => r.phase))];
+
+  return (
+    <div className="flex-1 flex flex-col">
+      <div className="border-b border-border/40 bg-card/50">
+        <div className="max-w-[1200px] mx-auto px-4 sm:px-6 lg:px-8 py-5">
+          <Button variant="ghost" size="sm" className="mb-3 text-muted-foreground -ml-2" onClick={onBack} data-testid="button-back-projects">
+            <ArrowLeft className="w-4 h-4 mr-1.5" /> Back to Projects
+          </Button>
+          <div className="flex items-start justify-between gap-4 flex-wrap">
+            <div className="flex items-center gap-4">
+              <div className="w-12 h-12 rounded-2xl bg-primary/10 flex items-center justify-center">
+                <Building2 className="w-6 h-6 text-primary" />
+              </div>
+              <div>
+                <div className="flex items-center gap-3">
+                  <h1 className="text-2xl font-display font-bold" data-testid="text-project-name">{project.name}</h1>
+                  {project.githubLink && (
+                    <a href={project.githubLink} target="_blank" rel="noreferrer" className="text-muted-foreground hover:text-primary transition-colors" data-testid="project-detail-github">
+                      <GitBranch className="w-5 h-5" />
+                    </a>
+                  )}
+                </div>
+                <div className="flex items-center gap-2 mt-1 flex-wrap">
+                  <span className="text-sm text-muted-foreground font-medium">{project.industry}</span>
+                  <Badge variant={project.status === "active" ? "default" : "secondary"} className="capitalize text-xs">{project.status}</Badge>
+                </div>
+              </div>
+            </div>
+            <div className="flex items-center gap-4 text-sm">
+              <span className="font-semibold">{project.taskCount} <span className="font-normal text-muted-foreground">tasks</span></span>
+              <span className="text-emerald-600 font-semibold">{project.completedCount} <span className="font-normal text-muted-foreground">done</span></span>
+              <span className="text-blue-600 font-semibold">{project.inProgressCount} <span className="font-normal text-muted-foreground">active</span></span>
+            </div>
+          </div>
+          <p className="text-sm text-muted-foreground mt-3 max-w-3xl">{project.description}</p>
+
+          {(project.architecture || project.techStackParsed.length > 0 || project.phasesParsed.length > 0) && (
+            <div className="mt-4 flex flex-wrap gap-4">
+              {project.techStackParsed.length > 0 && (
+                <div>
+                  <p className="text-[10px] text-muted-foreground font-semibold uppercase tracking-wider mb-1 flex items-center gap-1">
+                    <Cpu className="w-3 h-3" /> Tech Stack
+                  </p>
+                  <div className="flex flex-wrap gap-1">
+                    {project.techStackParsed.map((t: string) => (
+                      <Badge key={t} variant="secondary" className="text-xs">{t}</Badge>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {project.architecture && (
+                <div className="max-w-md">
+                  <p className="text-[10px] text-muted-foreground font-semibold uppercase tracking-wider mb-1 flex items-center gap-1">
+                    <Layers className="w-3 h-3" /> Architecture
+                  </p>
+                  <p className="text-xs text-foreground/80">{project.architecture}</p>
+                </div>
+              )}
+            </div>
+          )}
+
+          {roadmap.length > 0 && (
+            <div className="mt-4">
+              <Button variant="ghost" size="sm" className="text-xs text-muted-foreground gap-1 -ml-2" onClick={() => setShowRoadmap(!showRoadmap)} data-testid="button-toggle-roadmap">
+                <Target className="w-3.5 h-3.5" /> Roadmap ({roadmap.length} milestones)
+                {showRoadmap ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+              </Button>
+              {showRoadmap && (
+                <div className="mt-2 space-y-3">
+                  {phases.map((phase: string) => {
+                    const items = roadmap.filter((r: any) => r.phase === phase);
+                    return (
+                      <div key={phase} className="bg-secondary/20 rounded-lg p-3 border border-border/30">
+                        <h4 className="text-xs font-semibold mb-2">{phase}</h4>
+                        <div className="space-y-1">
+                          {items.map((r: any) => (
+                            <div key={r.id} className="flex items-center gap-2 text-xs" data-testid={`roadmap-item-${r.id}`}>
+                              {r.status === "completed" ? (
+                                <CheckCircle className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
+                              ) : r.status === "in_progress" ? (
+                                <Clock className="w-3.5 h-3.5 text-blue-500 shrink-0" />
+                              ) : (
+                                <div className="w-3.5 h-3.5 rounded-full border border-border/60 shrink-0" />
+                              )}
+                              <span className={r.status === "completed" ? "text-muted-foreground line-through" : "text-foreground/80"}>{r.milestone}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+      <div className="flex-1 max-w-[1200px] w-full mx-auto px-4 sm:px-6 lg:px-8 py-6">
+        {project.tasks.length > 0 ? (
+          <TimelineView tasks={project.tasks} companyMap={companyMap} onContact={setContactTask} />
+        ) : (
+          <p className="text-center text-muted-foreground py-16">No tasks yet for this project.</p>
+        )}
+      </div>
+      <ContactModal task={contactTask} onClose={() => setContactTask(null)} />
+    </div>
+  );
+}
+
+function CompletedTaskCard({ task, companyMap, onContact }: { task: Task; companyMap: Record<number, string>; onContact: (t: Task) => void }) {
+  const subtasks = parseJsonArray(task.subtasks);
+  const deliverables = parseJsonArray(task.deliverables);
+
+  return (
+    <div className="bg-card rounded-xl border border-border/50 border-l-4 border-l-emerald-500 p-5" data-testid={`completed-task-${task.id}`}>
+      <div className="flex items-start justify-between gap-3 mb-2">
+        <h4 className="font-display font-bold text-sm">{task.title}</h4>
+        <div className="flex items-center gap-1.5 shrink-0">
+          {task.difficulty && (
+            <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-5 capitalize">{task.difficulty}</Badge>
+          )}
+          <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-5 bg-emerald-500/10 text-emerald-600 border-emerald-500/20">
+            Completed
+          </Badge>
+        </div>
+      </div>
+      <p className="text-xs text-muted-foreground line-clamp-2 mb-3">{task.description}</p>
+      {task.solutionNotes && (
+        <div className="bg-secondary/30 rounded-lg p-3 border border-border/30 mb-3">
+          <p className="text-[11px] font-semibold text-muted-foreground flex items-center gap-1 mb-1">
+            <FileText className="w-3 h-3" /> Solution
+          </p>
+          <p className="text-xs text-foreground/80">{task.solutionNotes}</p>
+        </div>
+      )}
+      {deliverables.length > 0 && (
+        <div className="mb-3">
+          <p className="text-[10px] font-semibold text-muted-foreground mb-1">Deliverables</p>
+          <div className="flex flex-wrap gap-1">
+            {deliverables.slice(0, 3).map((d, i) => (
+              <Badge key={i} variant="outline" className="text-[10px] px-1.5 py-0 h-5">{d}</Badge>
+            ))}
+            {deliverables.length > 3 && <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-5">+{deliverables.length - 3}</Badge>}
+          </div>
+        </div>
+      )}
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex items-center gap-1.5 flex-wrap">
+          <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-5">{task.projectArea}</Badge>
+          {task.companyId && companyMap[task.companyId] && (
+            <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-5">{companyMap[task.companyId]}</Badge>
+          )}
+          {task.githubLink && (
+            <a href={task.githubLink} target="_blank" rel="noreferrer" className="text-emerald-500 hover:text-emerald-600">
+              <GitBranch className="w-3.5 h-3.5" />
+            </a>
+          )}
+        </div>
+        <Button variant="ghost" size="sm" className="h-7 px-2 text-[11px] text-muted-foreground hover:text-primary gap-1" onClick={() => onContact(task)} data-testid={`button-contact-completed-${task.id}`}>
+          <Mail className="w-3 h-3" /> Contact
+        </Button>
+      </div>
     </div>
   );
 }

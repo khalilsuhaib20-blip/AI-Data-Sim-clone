@@ -33,7 +33,7 @@ export default function Board() {
   };
 
   const handleGenerate = () => {
-    generateTask.mutate();
+    generateTask.mutate({});
   };
 
   if (isLoading) {

@@ -35,7 +35,6 @@ const upload = multer({
 async function getOpenAIClient(): Promise<OpenAI> {
   const customApiKey = await storage.getSetting("openai_api_key");
   const customBaseUrl = await storage.getSetting("openai_base_url");
-  const customModel = await storage.getSetting("openai_model");
 
   return new OpenAI({
     apiKey: customApiKey || process.env.AI_INTEGRATIONS_OPENAI_API_KEY,
@@ -84,7 +83,10 @@ async function seedDatabase() {
       priority: "urgent",
       projectArea: "Data Engineering",
       recommendedRole: "Data Engineer",
+      assignedRole: "Data Engineer",
+      difficulty: "hard",
       status: "in_progress",
+      businessContext: "Fraud losses increased 15% last quarter. Real-time detection is critical for our merchant partners' trust and platform revenue.",
       solutionNotes: "Using Apache Kafka + Flink for stream processing with z-score based anomaly detection.",
       githubLink: "https://github.com/example/anomaly-pipeline",
     });
@@ -96,7 +98,10 @@ async function seedDatabase() {
       priority: "high",
       projectArea: "Data Science",
       recommendedRole: "Data Scientist",
+      assignedRole: "Data Scientist",
+      difficulty: "medium",
       status: "backlog",
+      businessContext: "We're losing 8% of merchants quarterly. A predictive model would let the customer success team intervene early.",
     });
     await storage.createTask({
       companyId: c2.id,
@@ -106,7 +111,10 @@ async function seedDatabase() {
       priority: "high",
       projectArea: "Data Engineering",
       recommendedRole: "Data Engineer",
+      assignedRole: "Data Engineer",
+      difficulty: "hard",
       status: "completed",
+      businessContext: "Hospital partners require FHIR compliance for data interoperability. Without it, we can't onboard new clients.",
       solutionNotes: "Implemented star schema with FHIR resource mapping layer. Used dbt for transformations.",
       githubLink: "https://github.com/example/fhir-warehouse",
       architectureNotes: "Snowflake as warehouse, dbt for transformations, Fivetran for ingestion",
@@ -119,7 +127,10 @@ async function seedDatabase() {
       priority: "medium",
       projectArea: "Analytics",
       recommendedRole: "Data Analyst",
+      assignedRole: "Data Analyst",
+      difficulty: "medium",
       status: "backlog",
+      businessContext: "Clinical ops team spends 4 hours/week manually compiling trial metrics. This dashboard would eliminate that manual effort.",
     });
     await storage.createTask({
       companyId: c3.id,
@@ -129,7 +140,10 @@ async function seedDatabase() {
       priority: "high",
       projectArea: "MLOps",
       recommendedRole: "ML Engineer",
+      assignedRole: "ML Engineer",
+      difficulty: "hard",
       status: "completed",
+      businessContext: "Inventory waste costs $2M/year. Deploying this model to production could reduce stockouts by 30%.",
       solutionNotes: "Deployed via MLflow + Kubernetes. Set up Evidently AI for drift monitoring.",
       githubLink: "https://github.com/example/demand-forecast-mlops",
     });
@@ -204,6 +218,198 @@ export async function registerRoutes(
     res.status(204).send();
   });
 
+  // ========== AI COMPANY SUGGESTIONS ==========
+  app.post("/api/companies/:id/suggest", requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const company = await storage.getCompany(Number(req.params.id));
+      if (!company) return res.status(404).json({ message: "Company not found" });
+
+      const openai = await getOpenAIClient();
+      const model = await getAIModel();
+      const response = await openai.chat.completions.create({
+        model,
+        messages: [{
+          role: "system",
+          content: `You are a CTO designing the technical foundation for a new data/AI engineering project.
+
+Company: ${company.name}
+Industry: ${company.industry}
+Description: ${company.description}
+
+Based on this company's domain and goals, suggest a realistic technical setup. Return JSON with:
+
+- techStack: string — comma-separated list of technologies (e.g. "Python, Apache Spark, dbt, Snowflake, Airflow, Docker, Kubernetes, Terraform")
+- architecture: string — a brief description of the system architecture (2-3 sentences covering data flow, storage, processing, and serving layers)
+- phases: array of strings — ordered project phases the company would go through (e.g. ["Data Ingestion", "Data Storage & Modeling", "ETL/ELT Pipelines", "Analytics & Reporting", "Machine Learning", "MLOps & Monitoring"])
+- roles: array of strings — team roles needed (e.g. ["Data Engineer", "Data Analyst", "Data Scientist", "ML Engineer", "Analytics Engineer", "MLOps Engineer", "Software Engineer", "Stakeholder"])
+
+Make it realistic and specific to the industry. Include 5-8 phases and 4-8 roles.`
+        }],
+        response_format: { type: "json_object" },
+      });
+
+      const content = response.choices[0]?.message?.content;
+      if (!content) throw new Error("Failed to generate suggestions");
+      const suggestions = JSON.parse(content);
+      res.json(suggestions);
+    } catch (error) {
+      console.error("Error generating suggestions:", error);
+      res.status(500).json({ message: "Failed to generate suggestions" });
+    }
+  });
+
+  // ========== ROADMAP ==========
+  app.get("/api/companies/:id/roadmap", async (req, res) => {
+    const roadmap = await storage.getRoadmap(Number(req.params.id));
+    res.json(roadmap);
+  });
+
+  app.post("/api/companies/:id/roadmap/generate", requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const company = await storage.getCompany(Number(req.params.id));
+      if (!company) return res.status(404).json({ message: "Company not found" });
+
+      let phases: string[] = [];
+      if (company.phases) {
+        try { phases = JSON.parse(company.phases); } catch {}
+      }
+
+      const openai = await getOpenAIClient();
+      const model = await getAIModel();
+      const response = await openai.chat.completions.create({
+        model,
+        messages: [{
+          role: "system",
+          content: `You are a CTO creating a project roadmap for a data/AI engineering team.
+
+Company: ${company.name}
+Industry: ${company.industry}
+Description: ${company.description}
+Tech Stack: ${company.techStack || "Not specified"}
+Architecture: ${company.architecture || "Not specified"}
+${phases.length > 0 ? `Project Phases: ${phases.join(", ")}` : ""}
+
+Generate a detailed roadmap with phases and milestones. Each milestone should be a concrete deliverable or achievement.
+
+Return JSON with:
+- roadmap: array of objects, each with:
+  - phase: string (phase name)
+  - milestone: string (specific milestone/deliverable name)
+  - description: string (brief description of what this milestone entails)
+
+Generate 3-5 milestones per phase. Order them logically — earlier phases should be foundational, later phases build on them.
+${phases.length > 0 ? `Use these phases: ${phases.join(", ")}` : "Use realistic data engineering project phases."}`
+        }],
+        response_format: { type: "json_object" },
+      });
+
+      const content = response.choices[0]?.message?.content;
+      if (!content) throw new Error("Failed to generate roadmap");
+      const result = JSON.parse(content);
+
+      await storage.deleteRoadmapByCompany(company.id);
+
+      const items = result.roadmap || [];
+      const created = [];
+      for (let i = 0; i < items.length; i++) {
+        const item = await storage.createRoadmapItem({
+          companyId: company.id,
+          phase: items[i].phase,
+          milestone: items[i].milestone,
+          description: items[i].description || null,
+          orderIndex: i,
+          status: "pending",
+        });
+        created.push(item);
+      }
+      res.json(created);
+    } catch (error) {
+      console.error("Error generating roadmap:", error);
+      res.status(500).json({ message: "Failed to generate roadmap" });
+    }
+  });
+
+  app.post("/api/companies/:id/roadmap/evolve", requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const company = await storage.getCompany(Number(req.params.id));
+      if (!company) return res.status(404).json({ message: "Company not found" });
+
+      const existingRoadmap = await storage.getRoadmap(company.id);
+      const existingTasks = await storage.getTasksByCompany(company.id);
+      const completedTasks = existingTasks.filter(t => t.status === "completed").map(t => t.title);
+      const activeTasks = existingTasks.filter(t => t.status === "in_progress").map(t => `${t.title}${t.progressNotes ? ` (Progress: ${t.progressNotes})` : ""}`);
+
+      const openai = await getOpenAIClient();
+      const model = await getAIModel();
+      const response = await openai.chat.completions.create({
+        model,
+        messages: [{
+          role: "system",
+          content: `You are a CTO simulating realistic project evolution for a data/AI team.
+
+Company: ${company.name}
+Industry: ${company.industry}
+Description: ${company.description}
+Tech Stack: ${company.techStack || "Not specified"}
+
+Current roadmap phases and milestones:
+${existingRoadmap.map(r => `- [${r.status}] ${r.phase}: ${r.milestone}`).join("\n")}
+
+Completed tasks: ${completedTasks.length > 0 ? completedTasks.join(", ") : "None yet"}
+Active tasks: ${activeTasks.length > 0 ? activeTasks.join("; ") : "None"}
+
+Introduce 1-3 realistic new events that would naturally occur in a growing data/AI company. These could be:
+- Stakeholder feature requests
+- Data quality incidents
+- Scaling/performance issues
+- ML model performance degradation
+- New regulatory requirements
+- Integration requests from other teams
+- Infrastructure failures or tech debt
+
+Return JSON with:
+- events: array of objects, each with:
+  - type: string (e.g. "feature_request", "incident", "scaling", "tech_debt", "regulation")
+  - title: string (brief event title)
+  - description: string (what happened)
+  - newMilestones: array of objects with { phase: string, milestone: string, description: string } — new roadmap items this event creates
+  - suggestedTaskTitle: string — a task title that should be created to address this event`
+        }],
+        response_format: { type: "json_object" },
+      });
+
+      const content = response.choices[0]?.message?.content;
+      if (!content) throw new Error("Failed to evolve roadmap");
+      const result = JSON.parse(content);
+
+      const maxOrder = existingRoadmap.length > 0
+        ? Math.max(...existingRoadmap.map(r => r.orderIndex)) + 1
+        : 0;
+
+      const newItems = [];
+      let orderOffset = 0;
+      for (const event of (result.events || [])) {
+        for (const ms of (event.newMilestones || [])) {
+          const item = await storage.createRoadmapItem({
+            companyId: company.id,
+            phase: ms.phase,
+            milestone: ms.milestone,
+            description: ms.description || null,
+            orderIndex: maxOrder + orderOffset,
+            status: "pending",
+          });
+          newItems.push(item);
+          orderOffset++;
+        }
+      }
+
+      res.json({ events: result.events, newRoadmapItems: newItems });
+    } catch (error) {
+      console.error("Error evolving roadmap:", error);
+      res.status(500).json({ message: "Failed to evolve roadmap" });
+    }
+  });
+
   // ========== TASKS ==========
   app.get(api.tasks.list.path, async (req, res) => {
     const companyId = req.query.companyId ? Number(req.query.companyId) : undefined;
@@ -245,15 +451,51 @@ export async function registerRoutes(
     res.status(204).send();
   });
 
-  // ========== GENERATE TASK ==========
+  // ========== PROGRESS NOTES ==========
+  app.patch("/api/tasks/:id/progress", requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const { progressNotes } = z.object({ progressNotes: z.string() }).parse(req.body);
+      const task = await storage.updateTask(Number(req.params.id), { progressNotes });
+      if (!task) return res.status(404).json({ message: "Task not found" });
+      res.json(task);
+    } catch (err) {
+      if (err instanceof z.ZodError) return res.status(400).json({ message: err.errors[0].message });
+      res.status(500).json({ message: "Failed to update progress" });
+    }
+  });
+
+  // ========== GENERATE TASK (CTO SIMULATOR) ==========
   app.post(api.tasks.generate.path, requireAuth, requireAdmin, async (req, res) => {
     try {
-      const companyId = req.body?.companyId;
-      let industry = "Technology";
+      const { companyId, milestoneId, progressContext } = req.body || {};
+      let company = null;
+      let milestone = null;
+      let roadmapContext = "";
+
       if (companyId) {
-        const company = await storage.getCompany(companyId);
-        if (company) industry = company.industry;
+        company = await storage.getCompany(companyId);
       }
+      if (milestoneId) {
+        const roadmap = company ? await storage.getRoadmap(company.id) : [];
+        milestone = roadmap.find(r => r.id === milestoneId);
+      }
+
+      const recentTasks = company
+        ? await storage.getTasksByCompany(company.id)
+        : await storage.getTasks();
+      const recentTaskTitles = recentTasks.slice(0, 15).map(t => t.title);
+
+      if (company) {
+        const roadmap = await storage.getRoadmap(company.id);
+        if (roadmap.length > 0) {
+          roadmapContext = `\nProject Roadmap:\n${roadmap.map(r => `- [${r.status}] ${r.phase}: ${r.milestone}`).join("\n")}`;
+        }
+      }
+
+      const roles = company?.roles
+        ? (() => { try { return JSON.parse(company.roles); } catch { return null; } })()
+        : null;
+      const roleList = roles && Array.isArray(roles) ? roles.join(", ") : "Stakeholder, Data Engineer, Data Analyst, Data Scientist, ML Engineer, MLOps Engineer, Analytics Engineer, Software Engineer";
 
       const openai = await getOpenAIClient();
       const model = await getAIModel();
@@ -261,17 +503,33 @@ export async function registerRoutes(
         model,
         messages: [{
           role: "system",
-          content: `You are simulating a real technology company team.
+          content: `You are a CTO assigning realistic engineering work to your data/AI team. You create tasks that resemble real Jira tickets — specific, actionable, and grounded in business needs.
 
-Generate a realistic task request for a data professional.
+Company: ${company?.name || "General"} (${company?.industry || "Technology"})
+Description: ${company?.description || "A technology company"}
+Tech Stack: ${company?.techStack || "Not specified"}
+Architecture: ${company?.architecture || "Not specified"}
+${roadmapContext}
+${milestone ? `\nCurrent Milestone: ${milestone.phase} → ${milestone.milestone}${milestone.description ? ` (${milestone.description})` : ""}` : ""}
+${progressContext ? `\nDeveloper Progress Context: ${progressContext}` : ""}
 
-Company industry: ${industry}
+Available team roles: ${roleList}
 
-Possible roles requesting work:
-Stakeholder, Software Engineer, Data Engineer, Data Scientist, ML Engineer, Analyst
+IMPORTANT: Do NOT generate tasks similar to these recent ones:
+${recentTaskTitles.length > 0 ? recentTaskTitles.map(t => `- ${t}`).join("\n") : "No recent tasks yet."}
 
-Return JSON with:
-title, description, requestedBy, priority (low/medium/high/urgent), projectArea (Data Engineering/Data Science/Analytics/MLOps), recommendedRole, deliverables`
+Generate a realistic engineering task. Return JSON with:
+- title: string (concise, specific task title like a Jira ticket)
+- description: string (detailed technical description — what needs to be built, why, and key requirements)
+- requestedBy: string (the role requesting this work — pick from the available roles)
+- assignedRole: string (the role best suited to do this work)
+- priority: "low" | "medium" | "high" | "urgent"
+- projectArea: one of "Data Engineering", "Data Science", "Analytics", "MLOps", "DataOps", "Analytics Engineering"
+- difficulty: "easy" | "medium" | "hard" | "expert"
+- businessContext: string (1-2 sentences explaining WHY this task matters to the business)
+- subtasks: array of strings (3-6 specific subtasks/checklist items)
+- deliverables: array of strings (2-4 expected deliverables)
+- recommendedRole: string (same as assignedRole, for backward compatibility)`
         }],
         response_format: { type: "json_object" },
       });
@@ -284,145 +542,37 @@ title, description, requestedBy, priority (low/medium/high/urgent), projectArea 
         title: z.string().min(1),
         description: z.string().min(1),
         requestedBy: z.string().min(1),
+        assignedRole: z.string().optional(),
         priority: z.enum(["low", "medium", "high", "urgent"]),
         projectArea: z.string().min(1),
+        difficulty: z.string().optional(),
+        businessContext: z.string().optional(),
+        subtasks: z.array(z.string()).optional(),
+        deliverables: z.array(z.string()).optional(),
         recommendedRole: z.string().optional(),
       });
       const validated = generatedSchema.parse(generated);
 
       const task = await storage.createTask({
         companyId: companyId || null,
+        milestoneId: milestoneId || null,
         title: validated.title,
         description: validated.description,
         requestedBy: validated.requestedBy,
         priority: validated.priority,
         projectArea: validated.projectArea,
-        recommendedRole: validated.recommendedRole || null,
+        recommendedRole: validated.recommendedRole || validated.assignedRole || null,
+        assignedRole: validated.assignedRole || validated.recommendedRole || null,
+        difficulty: validated.difficulty || null,
+        businessContext: validated.businessContext || null,
+        subtasks: validated.subtasks ? JSON.stringify(validated.subtasks) : null,
+        deliverables: validated.deliverables ? JSON.stringify(validated.deliverables) : null,
         status: "backlog",
       });
       res.status(201).json(task);
     } catch (error) {
       console.error("Error generating task:", error);
       res.status(500).json({ message: "Failed to generate task" });
-    }
-  });
-
-  // ========== TASK LOGS & AI REVIEW ==========
-  app.get("/api/tasks/:id/logs", requireAuth, requireAdmin, async (req, res) => {
-    const logs = await storage.getTaskLogs(Number(req.params.id));
-    res.json(logs);
-  });
-
-  app.post("/api/tasks/:id/submit", requireAuth, requireAdmin, async (req, res) => {
-    try {
-      const taskId = Number(req.params.id);
-      const task = await storage.getTask(taskId);
-      if (!task) return res.status(404).json({ message: "Task not found" });
-
-      const inputSchema = z.object({
-        content: z.string().min(1),
-        githubLink: z.string().optional(),
-        screenshotUrl: z.string().optional(),
-        fileUrl: z.string().optional(),
-      });
-      const input = inputSchema.parse(req.body);
-
-      const attachments: Record<string, string> = {};
-      if (input.githubLink) attachments.githubLink = input.githubLink;
-      if (input.screenshotUrl) attachments.screenshotUrl = input.screenshotUrl;
-      if (input.fileUrl) attachments.fileUrl = input.fileUrl;
-
-      const userLog = await storage.createTaskLog({
-        taskId,
-        role: "user",
-        content: input.content,
-        attachments: Object.keys(attachments).length > 0 ? JSON.stringify(attachments) : null,
-      });
-
-      let companyContext = "";
-      if (task.companyId) {
-        const company = await storage.getCompany(task.companyId);
-        if (company) companyContext = `Company: ${company.name} (${company.industry})\n`;
-      }
-
-      const previousLogs = await storage.getTaskLogs(taskId);
-      const conversationHistory = previousLogs.map(log => {
-        if (log.role === "user") {
-          let msg = log.content;
-          if (log.attachments) {
-            try {
-              const att = JSON.parse(log.attachments);
-              const links = [];
-              if (att.githubLink) links.push(`GitHub: ${att.githubLink}`);
-              if (att.screenshotUrl) links.push(`Screenshot: ${att.screenshotUrl}`);
-              if (att.fileUrl) links.push(`File: ${att.fileUrl}`);
-              if (links.length) msg += "\n\nAttached: " + links.join(", ");
-            } catch {}
-          }
-          return { role: "user" as const, content: msg };
-        }
-        let aiContent = log.content;
-        try {
-          const parsed = JSON.parse(log.content);
-          aiContent = parsed.feedback || parsed.summary || log.content;
-        } catch {}
-        return { role: "assistant" as const, content: aiContent };
-      });
-
-      const openai = await getOpenAIClient();
-      const model = await getAIModel();
-      const response = await openai.chat.completions.create({
-        model,
-        messages: [
-          {
-            role: "system",
-            content: `You are a senior data engineering reviewer working with a developer on this task:
-
-${companyContext}Task: ${task.title}
-Description: ${task.description}
-Project Area: ${task.projectArea}
-Priority: ${task.priority}
-Current Status: ${task.status}
-
-Review the developer's submission and previous conversation. Provide constructive feedback in a conversational tone. Include:
-- Assessment of the work submitted
-- Specific strengths and areas for improvement
-- Actionable suggestions for next steps
-- Whether the task looks ready to close or needs more work
-
-Respond as JSON with keys: feedback (string - your conversational review), score (number 1-10), readyToClose (boolean - whether the task seems complete), actionItems (array of strings - specific next steps).`
-          },
-          ...conversationHistory,
-        ],
-        response_format: { type: "json_object" },
-      });
-
-      const content = response.choices[0]?.message?.content;
-      if (!content) throw new Error("Failed to get AI review");
-
-      let aiReview;
-      try {
-        aiReview = JSON.parse(content);
-      } catch {
-        aiReview = { feedback: content, score: 0, readyToClose: false, actionItems: [] };
-      }
-
-      const aiLog = await storage.createTaskLog({
-        taskId,
-        role: "ai",
-        content: JSON.stringify(aiReview),
-        attachments: null,
-      });
-
-      if (task.status === "backlog") {
-        await storage.updateTask(taskId, { status: "in_progress" });
-      }
-
-      res.json({ userLog, aiLog, review: aiReview });
-    } catch (error) {
-      console.error("Error submitting task:", error);
-      if (error instanceof z.ZodError) return res.status(400).json({ message: error.errors[0].message });
-      res.status(500).json({ message: "Failed to submit for review" });
     }
   });
 

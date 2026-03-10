@@ -41,7 +41,7 @@ export const api = {
     create: { method: "POST" as const, path: "/api/tasks" as const, input: insertTaskSchema, responses: { 201: z.any(), 400: errorSchemas.validation } },
     update: { method: "PATCH" as const, path: "/api/tasks/:id" as const, input: insertTaskSchema.partial(), responses: { 200: z.any(), 404: errorSchemas.notFound } },
     delete: { method: "DELETE" as const, path: "/api/tasks/:id" as const, responses: { 204: z.void(), 404: errorSchemas.notFound } },
-    generate: { method: "POST" as const, path: "/api/generate-task" as const, input: z.object({ companyId: z.number().optional() }).optional(), responses: { 201: z.any(), 500: errorSchemas.internal } },
+    generate: { method: "POST" as const, path: "/api/generate-task" as const, input: z.object({ companyId: z.number().optional(), milestoneId: z.number().optional(), progressContext: z.string().optional() }).optional(), responses: { 201: z.any(), 500: errorSchemas.internal } },
   },
   contacts: {
     list: { method: "GET" as const, path: "/api/contacts" as const, responses: { 200: z.array(z.any()) } },

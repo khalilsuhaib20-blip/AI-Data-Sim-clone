@@ -1,14 +1,14 @@
 import { db } from "./db";
 import {
-  users, companies, tasks, taskLogs, contactRequests, appSettings,
+  users, companies, tasks, projectRoadmap, contactRequests, appSettings,
   type InsertUser, type User,
   type InsertCompany, type Company,
   type InsertTask, type Task,
-  type InsertTaskLog, type TaskLog,
+  type InsertRoadmapItem, type RoadmapItem,
   type InsertContact, type ContactRequest,
   type AppSetting,
 } from "@shared/schema";
-import { eq, desc, count, and, asc } from "drizzle-orm";
+import { eq, desc, asc } from "drizzle-orm";
 
 export interface IStorage {
   getUser(id: number): Promise<User | undefined>;
@@ -21,15 +21,18 @@ export interface IStorage {
   updateCompany(id: number, updates: Partial<InsertCompany>): Promise<Company>;
   deleteCompany(id: number): Promise<void>;
 
+  getRoadmap(companyId: number): Promise<RoadmapItem[]>;
+  createRoadmapItem(item: InsertRoadmapItem): Promise<RoadmapItem>;
+  updateRoadmapItem(id: number, updates: Partial<InsertRoadmapItem>): Promise<RoadmapItem>;
+  deleteRoadmapByCompany(companyId: number): Promise<void>;
+
   getTasks(): Promise<Task[]>;
   getTask(id: number): Promise<Task | undefined>;
   getTasksByCompany(companyId: number): Promise<Task[]>;
+  getTasksByMilestone(milestoneId: number): Promise<Task[]>;
   createTask(task: InsertTask): Promise<Task>;
   updateTask(id: number, updates: Partial<InsertTask>): Promise<Task>;
   deleteTask(id: number): Promise<void>;
-
-  getTaskLogs(taskId: number): Promise<TaskLog[]>;
-  createTaskLog(log: InsertTaskLog): Promise<TaskLog>;
 
   getContacts(): Promise<ContactRequest[]>;
   createContact(contact: InsertContact): Promise<ContactRequest>;
@@ -81,7 +84,25 @@ export class DatabaseStorage implements IStorage {
     return updated;
   }
   async deleteCompany(id: number) {
+    await db.delete(projectRoadmap).where(eq(projectRoadmap.companyId, id));
     await db.delete(companies).where(eq(companies.id, id));
+  }
+
+  async getRoadmap(companyId: number) {
+    return db.select().from(projectRoadmap)
+      .where(eq(projectRoadmap.companyId, companyId))
+      .orderBy(asc(projectRoadmap.orderIndex));
+  }
+  async createRoadmapItem(item: InsertRoadmapItem) {
+    const [newItem] = await db.insert(projectRoadmap).values(item).returning();
+    return newItem;
+  }
+  async updateRoadmapItem(id: number, updates: Partial<InsertRoadmapItem>) {
+    const [updated] = await db.update(projectRoadmap).set(updates).where(eq(projectRoadmap.id, id)).returning();
+    return updated;
+  }
+  async deleteRoadmapByCompany(companyId: number) {
+    await db.delete(projectRoadmap).where(eq(projectRoadmap.companyId, companyId));
   }
 
   async getTasks() {
@@ -94,6 +115,9 @@ export class DatabaseStorage implements IStorage {
   async getTasksByCompany(companyId: number) {
     return db.select().from(tasks).where(eq(tasks.companyId, companyId)).orderBy(desc(tasks.createdAt));
   }
+  async getTasksByMilestone(milestoneId: number) {
+    return db.select().from(tasks).where(eq(tasks.milestoneId, milestoneId)).orderBy(desc(tasks.createdAt));
+  }
   async createTask(task: InsertTask) {
     const [newTask] = await db.insert(tasks).values(task).returning();
     return newTask;
@@ -104,14 +128,6 @@ export class DatabaseStorage implements IStorage {
   }
   async deleteTask(id: number) {
     await db.delete(tasks).where(eq(tasks.id, id));
-  }
-
-  async getTaskLogs(taskId: number) {
-    return db.select().from(taskLogs).where(eq(taskLogs.taskId, taskId)).orderBy(asc(taskLogs.createdAt));
-  }
-  async createTaskLog(log: InsertTaskLog) {
-    const [newLog] = await db.insert(taskLogs).values(log).returning();
-    return newLog;
   }
 
   async getContacts() {
@@ -142,7 +158,6 @@ export class DatabaseStorage implements IStorage {
     const allCompanies = await db.select().from(companies);
     const allTasks = await db.select().from(tasks);
 
-    const tasksByCompany: { companyName: string; count: number }[] = [];
     const companyMap = new Map(allCompanies.map(c => [c.id, c.name]));
     const companyCount: Record<string, number> = {};
     const roleCount: Record<string, number> = {};

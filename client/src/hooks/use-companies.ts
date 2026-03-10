@@ -82,3 +82,71 @@ export function useDeleteCompany() {
     },
   });
 }
+
+export function useSuggestCompany() {
+  const { token } = useAuth();
+  return useMutation({
+    mutationFn: async (id: number) => {
+      const res = await fetch(`/api/companies/${id}/suggest`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) throw new Error("Failed to get AI suggestions");
+      return res.json() as Promise<{
+        techStack: string;
+        architecture: string;
+        phases: string[];
+        roles: string[];
+      }>;
+    },
+  });
+}
+
+export function useRoadmap(companyId: number | null) {
+  return useQuery({
+    queryKey: ["/api/companies", companyId, "roadmap"],
+    queryFn: async () => {
+      const res = await fetch(`/api/companies/${companyId}/roadmap`);
+      if (!res.ok) throw new Error("Failed to fetch roadmap");
+      return res.json();
+    },
+    enabled: !!companyId,
+  });
+}
+
+export function useGenerateRoadmap() {
+  const queryClient = useQueryClient();
+  const { token } = useAuth();
+  return useMutation({
+    mutationFn: async (companyId: number) => {
+      const res = await fetch(`/api/companies/${companyId}/roadmap/generate`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) throw new Error("Failed to generate roadmap");
+      return res.json();
+    },
+    onSuccess: (_data, companyId) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/companies", companyId, "roadmap"] });
+    },
+  });
+}
+
+export function useEvolveRoadmap() {
+  const queryClient = useQueryClient();
+  const { token } = useAuth();
+  return useMutation({
+    mutationFn: async (companyId: number) => {
+      const res = await fetch(`/api/companies/${companyId}/roadmap/evolve`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) throw new Error("Failed to evolve roadmap");
+      return res.json();
+    },
+    onSuccess: (_data, companyId) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/companies", companyId, "roadmap"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/tasks"] });
+    },
+  });
+}

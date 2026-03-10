@@ -42,18 +42,6 @@ export function useUpdateTask() {
       if (!res.ok) throw new Error("Failed to update task");
       return res.json();
     },
-    onMutate: async (updatedTask) => {
-      await queryClient.cancelQueries({ queryKey: ["/api/tasks"] });
-      const previousTasks = queryClient.getQueryData(["/api/tasks", undefined]);
-      queryClient.setQueryData(["/api/tasks", undefined], (old: any) => {
-        if (!old) return old;
-        return old.map((task: any) => task.id === updatedTask.id ? { ...task, ...updatedTask } : task);
-      });
-      return { previousTasks };
-    },
-    onError: (_err, _newTask, context) => {
-      if (context?.previousTasks) queryClient.setQueryData(["/api/tasks", undefined], context.previousTasks);
-    },
     onSettled: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/tasks"] });
     },
@@ -64,11 +52,11 @@ export function useGenerateTask() {
   const queryClient = useQueryClient();
   const { token } = useAuth();
   return useMutation({
-    mutationFn: async (companyId?: number) => {
+    mutationFn: async (data: { companyId?: number; milestoneId?: number; progressContext?: string }) => {
       const res = await fetch(api.tasks.generate.path, {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ companyId }),
+        body: JSON.stringify(data),
       });
       if (!res.ok) throw new Error("Failed to generate task");
       return res.json();
@@ -79,36 +67,20 @@ export function useGenerateTask() {
   });
 }
 
-export function useTaskLogs(taskId: number | null) {
-  const { token } = useAuth();
-  return useQuery({
-    queryKey: ["/api/tasks", taskId, "logs"],
-    queryFn: async () => {
-      const res = await fetch(`/api/tasks/${taskId}/logs`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (!res.ok) throw new Error("Failed to fetch logs");
-      return res.json();
-    },
-    enabled: !!taskId,
-  });
-}
-
-export function useSubmitTask() {
+export function useUpdateProgress() {
   const queryClient = useQueryClient();
   const { token } = useAuth();
   return useMutation({
-    mutationFn: async ({ id, ...data }: { id: number; content: string; githubLink?: string; screenshotUrl?: string; fileUrl?: string }) => {
-      const res = await fetch(`/api/tasks/${id}/submit`, {
-        method: "POST",
+    mutationFn: async ({ id, progressNotes }: { id: number; progressNotes: string }) => {
+      const res = await fetch(`/api/tasks/${id}/progress`, {
+        method: "PATCH",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-        body: JSON.stringify(data),
+        body: JSON.stringify({ progressNotes }),
       });
-      if (!res.ok) throw new Error("Failed to submit");
+      if (!res.ok) throw new Error("Failed to update progress");
       return res.json();
     },
-    onSuccess: (_data, variables) => {
-      queryClient.invalidateQueries({ queryKey: ["/api/tasks", variables.id, "logs"] });
+    onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/tasks"] });
     },
   });

@@ -19,6 +19,21 @@ export const companies = pgTable("companies", {
   startDate: text("start_date"),
   endDate: text("end_date"),
   githubLink: text("github_link"),
+  techStack: text("tech_stack"),
+  architecture: text("architecture"),
+  phases: text("phases"),
+  roles: text("roles"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const projectRoadmap = pgTable("project_roadmap", {
+  id: serial("id").primaryKey(),
+  companyId: integer("company_id").notNull(),
+  phase: text("phase").notNull(),
+  milestone: text("milestone").notNull(),
+  description: text("description"),
+  orderIndex: integer("order_index").notNull().default(0),
+  status: varchar("status", { length: 50 }).notNull().default("pending"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
@@ -31,20 +46,18 @@ export const tasks = pgTable("tasks", {
   priority: varchar("priority", { length: 50 }).notNull(),
   projectArea: varchar("project_area", { length: 100 }).notNull(),
   recommendedRole: varchar("recommended_role", { length: 100 }),
+  assignedRole: varchar("assigned_role", { length: 100 }),
+  difficulty: varchar("difficulty", { length: 50 }),
   status: varchar("status", { length: 50 }).notNull().default("backlog"),
+  businessContext: text("business_context"),
+  subtasks: text("subtasks"),
+  deliverables: text("deliverables"),
   solutionNotes: text("solution_notes"),
   architectureNotes: text("architecture_notes"),
+  progressNotes: text("progress_notes"),
   githubLink: text("github_link"),
   documentationLink: text("documentation_link"),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-});
-
-export const taskLogs = pgTable("task_logs", {
-  id: serial("id").primaryKey(),
-  taskId: integer("task_id").notNull(),
-  role: varchar("role", { length: 20 }).notNull(),
-  content: text("content").notNull(),
-  attachments: text("attachments"),
+  milestoneId: integer("milestone_id"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
@@ -67,18 +80,18 @@ export const appSettings = pgTable("app_settings", {
 
 export const insertUserSchema = createInsertSchema(users).omit({ id: true, createdAt: true });
 export const insertCompanySchema = createInsertSchema(companies).omit({ id: true, createdAt: true });
+export const insertRoadmapSchema = createInsertSchema(projectRoadmap).omit({ id: true, createdAt: true });
 export const insertTaskSchema = createInsertSchema(tasks).omit({ id: true, createdAt: true });
-export const insertTaskLogSchema = createInsertSchema(taskLogs).omit({ id: true, createdAt: true });
 export const insertContactSchema = createInsertSchema(contactRequests).omit({ id: true, createdAt: true });
 
 export type User = typeof users.$inferSelect;
 export type InsertUser = z.infer<typeof insertUserSchema>;
 export type Company = typeof companies.$inferSelect;
 export type InsertCompany = z.infer<typeof insertCompanySchema>;
+export type RoadmapItem = typeof projectRoadmap.$inferSelect;
+export type InsertRoadmapItem = z.infer<typeof insertRoadmapSchema>;
 export type Task = typeof tasks.$inferSelect;
 export type InsertTask = z.infer<typeof insertTaskSchema>;
-export type TaskLog = typeof taskLogs.$inferSelect;
-export type InsertTaskLog = z.infer<typeof insertTaskLogSchema>;
 export type ContactRequest = typeof contactRequests.$inferSelect;
 export type InsertContact = z.infer<typeof insertContactSchema>;
 export type AppSetting = typeof appSettings.$inferSelect;

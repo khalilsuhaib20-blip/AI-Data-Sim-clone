@@ -1,0 +1,110 @@
+I want to evolve my app into a realistic AI-powered engineering simulator for data and AI teams.
+
+Currently the app has two AI systems:
+
+Task Generator
+
+Submission Reviewer
+
+Please remove the AI Submission Reviewer completely and focus on improving the Task Generator and project simulation.
+
+The goal is to simulate a real tech company environment where a CTO assigns engineering work as a product evolves.
+
+The system should generate tasks across:
+
+Data Engineering
+
+Data Analysis
+
+Data Science
+
+Machine Learning Engineering
+
+MLOps / DataOps
+
+Analytics Engineering
+
+IDEA 1 — SMART PROJECT CREATION
+
+When a user creates a company/project, the AI should automatically suggest (editable by the user):
+
+Tech stack
+
+System architecture
+
+Project phases
+
+Available roles
+
+Example roles:
+Stakeholder, Data Engineer, Data Analyst, Data Scientist, ML Engineer, MLOps Engineer, DataOps Engineer, Software Engineer, Analytics Engineer.
+
+IDEA 2 — PROJECT ROADMAP
+
+When a project is created, the AI should generate a high-level roadmap such as:
+
+Phases → Milestones → Tasks
+
+Example phases:
+Data Ingestion → Storage → Transformation → Analytics → Machine Learning → MLOps → Monitoring.
+
+This roadmap helps guide future task generation.
+
+IDEA 3 — TASK GENERATION
+
+The Task Generator should act like a CTO assigning realistic engineering tickets.
+
+Each task should include:
+
+title
+
+requester role
+
+assigned role
+
+project area
+
+priority
+
+difficulty
+
+business context
+
+technical description
+
+subtasks
+
+expected deliverables
+
+Tasks should resemble real Jira tickets.
+
+IDEA 4 — USER PROGRESS NOTES
+
+Allow users to leave a short progress note on tasks.
+This note should be sent to the AI so it can generate the next logical task.
+
+IDEA 5 — AVOID REPETITION
+
+When generating tasks, include a list of recent tasks so the AI avoids duplicates.
+
+IDEA 6 — ROADMAP EVOLUTION (OPTIONAL)
+
+Occasionally the AI may introduce new events such as:
+
+stakeholder feature requests
+
+data quality problems
+
+scaling issues
+
+ML performance problems
+
+This should create new tasks or milestones.
+
+FINAL GOAL
+
+The app should simulate a real data/AI company workflow:
+
+Project created → AI suggests stack & architecture → AI generates roadmap → Tasks generated → User progress → Roadmap evolves.
+
+Please implement these ideas in a clean and flexible way that fits the current architecture.

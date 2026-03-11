@@ -246,8 +246,16 @@ export async function registerRoutes(
 ): Promise<Server> {
   await seedDatabase();
 
+  // ========== PUBLIC CONFIG ==========
+  app.get("/api/config", (_req, res) => {
+    res.json({ adminEnabled: process.env.ADMIN_ENABLED !== "false" });
+  });
+
   // ========== AUTH ==========
   app.post(api.auth.login.path, async (req, res) => {
+    if (process.env.ADMIN_ENABLED === "false") {
+      return res.status(403).json({ message: "Admin panel is disabled in this environment." });
+    }
     try {
       const { username, password } = api.auth.login.input.parse(req.body);
       const user = await storage.getUserByUsername(username);

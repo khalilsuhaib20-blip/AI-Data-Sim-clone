@@ -1,6 +1,6 @@
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Mail, GitBranch, FileText, BarChart3, ListChecks, Package } from "lucide-react";
+import { Mail, GitBranch, FileText, BarChart3, ListChecks, Package, AlertTriangle } from "lucide-react";
 import type { Task } from "@shared/schema";
 import { useState } from "react";
 
@@ -35,17 +35,28 @@ export function TaskCard({ task, companyName, onContact, compact }: TaskCardProp
   const subtasks = parseJsonArray(task.subtasks);
   const deliverables = parseJsonArray(task.deliverables);
   const hasDetails = subtasks.length > 0 || deliverables.length > 0 || task.businessContext || task.solutionNotes;
+  const isIncident = task.title?.startsWith("[INCIDENT]");
 
   return (
     <div
-      className={`bg-card rounded-xl border border-border/50 p-4 card-hover group ${hasDetails ? "cursor-pointer" : ""}`}
+      className={`bg-card rounded-xl border p-4 card-hover group ${
+        isIncident ? "border-red-500/40 border-l-[3px] border-l-red-500" : "border-border/50"
+      } ${hasDetails ? "cursor-pointer" : ""}`}
       data-testid={`task-card-${task.id}`}
       onClick={() => hasDetails && setExpanded(!expanded)}
     >
       <div className="flex items-start justify-between gap-2 mb-2">
-        <h4 className="font-display font-bold leading-snug text-sm" data-testid={`task-title-${task.id}`}>
-          {task.title}
-        </h4>
+        <div className="flex items-start gap-2 flex-1 min-w-0">
+          {isIncident && <AlertTriangle className="w-3.5 h-3.5 text-red-500 shrink-0 mt-0.5" />}
+          <h4 className="font-display font-bold leading-snug text-sm" data-testid={`task-title-${task.id}`}>
+            {isIncident ? task.title.replace("[INCIDENT] ", "") : task.title}
+          </h4>
+        </div>
+        {isIncident && (
+          <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-5 bg-red-500/10 text-red-600 border-red-500/20 shrink-0">
+            Incident
+          </Badge>
+        )}
       </div>
 
       {!compact && (

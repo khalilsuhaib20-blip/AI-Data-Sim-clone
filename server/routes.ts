@@ -8,7 +8,7 @@ import OpenAI from "openai";
 import multer from "multer";
 import path from "path";
 import fs from "fs";
-import { generateToken, comparePassword, requireAuth, requireAdmin, seedAdminUser } from "./auth";
+import { generateToken, comparePassword, requireAuth, requireAdmin, seedAdminUser, verifyToken } from "./auth";
 
 const uploadsDir = path.join(process.cwd(), "uploads");
 if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
@@ -47,8 +47,98 @@ async function getAIModel(): Promise<string> {
   return customModel || "gpt-4o";
 }
 
+async function getPrompt(key: string, defaultValue: string): Promise<string> {
+  const stored = await storage.getSetting(key);
+  return stored && stored.length > 0 ? stored : defaultValue;
+}
+
+async function seedPromptIfMissing(key: string, value: string) {
+  const existing = await storage.getSetting(key);
+  if (!existing) {
+    await storage.setSetting(key, value);
+  }
+}
+
+const PROMPT_DEFAULTS = {
+  company_suggest: `You are a CTO designing the technical foundation for a new data/AI engineering project.
+
+Based on the company context provided, suggest a realistic technical setup. Return JSON with:
+- techStack: string — comma-separated list of technologies (e.g. "Python, Apache Spark, dbt, Snowflake, Airflow, Docker, Kubernetes, Terraform")
+- architecture: string — a brief description of the system architecture (2-3 sentences covering data flow, storage, processing, and serving layers)
+- phases: array of strings — ordered project phases the company would go through (e.g. ["Data Ingestion", "Data Storage & Modeling", "ETL/ELT Pipelines", "Analytics & Reporting", "Machine Learning", "MLOps & Monitoring"])
+- roles: array of strings — team roles needed (e.g. ["Data Engineer", "Data Analyst", "Data Scientist", "ML Engineer", "Analytics Engineer", "MLOps Engineer", "Software Engineer", "Stakeholder"])
+
+Make it realistic and specific to the industry. Include 5-8 phases and 4-8 roles.`,
+
+  roadmap_generate: `You are a CTO creating a project roadmap for a data/AI engineering team.
+
+Generate a detailed roadmap with phases and milestones. Each milestone should be a concrete deliverable or achievement.
+
+Return JSON with:
+- roadmap: array of objects, each with:
+  - phase: string (phase name)
+  - milestone: string (specific milestone/deliverable name)
+  - description: string (brief description of what this milestone entails)
+
+Generate 3-5 milestones per phase. Order them logically — earlier phases should be foundational, later phases build on them.`,
+
+  roadmap_evolve: `You are a CTO simulating realistic project evolution for a data/AI team.
+
+Introduce 1-3 realistic new events that would naturally occur in a growing data/AI company. These could be:
+- Stakeholder feature requests
+- Data quality incidents
+- Scaling/performance issues
+- ML model performance degradation
+- New regulatory requirements
+- Integration requests from other teams
+- Infrastructure failures or tech debt
+
+Return JSON with:
+- events: array of objects, each with:
+  - type: string (e.g. "feature_request", "incident", "scaling", "tech_debt", "regulation")
+  - title: string (brief event title)
+  - description: string (what happened)
+  - newMilestones: array of objects with { phase: string, milestone: string, description: string } — new roadmap items this event creates
+  - suggestedTaskTitle: string — a task title that should be created to address this event`,
+
+  task_generate: `You are a CTO assigning realistic engineering work to your data/AI team. You create tasks that resemble real Jira tickets — specific, actionable, and grounded in business needs.
+
+Generate a realistic engineering task. Return JSON with:
+- title: string (concise, specific task title like a Jira ticket)
+- description: string (detailed technical description — what needs to be built, why, and key requirements)
+- requestedBy: string (the role requesting this work — pick from the available roles)
+- assignedRole: string (the role best suited to do this work)
+- priority: "low" | "medium" | "high" | "urgent"
+- projectArea: one of "Data Engineering", "Data Science", "Analytics", "MLOps", "DataOps", "Analytics Engineering"
+- difficulty: "easy" | "medium" | "hard" | "expert"
+- businessContext: string (1-2 sentences explaining WHY this task matters to the business)
+- subtasks: array of strings (3-6 specific subtasks/checklist items)
+- deliverables: array of strings (2-4 expected deliverables)
+- recommendedRole: string (same as assignedRole, for backward compatibility)`,
+
+  incident_simulate: `You are simulating a realistic production incident at a data/AI company.
+
+Generate a realistic production incident that would occur in this company's data infrastructure. Return JSON with:
+- incidentTitle: string (short incident title, e.g. "Pipeline SLA Breach: 3-hour data delay in payment processing")
+- incidentDescription: string (detailed description of what happened and when it was detected)
+- severity: "low" | "medium" | "high" | "critical"
+- affectedSystem: string (which system/service is affected, e.g. "Kafka ingestion pipeline", "Feature store", "dbt transformation job")
+- businessImpact: string (1-2 sentences on the business impact)
+- urgentTaskTitle: string (title for the urgent remediation task)
+- urgentTaskDescription: string (detailed description of what needs to be done to resolve the incident, including investigation steps)
+- rootCause: string (suspected root cause)`,
+};
+
+const githubCache = new Map<string, { data: unknown; expires: number }>();
+
 async function seedDatabase() {
   await seedAdminUser();
+
+  await seedPromptIfMissing("prompt_company_suggest", PROMPT_DEFAULTS.company_suggest);
+  await seedPromptIfMissing("prompt_roadmap_generate", PROMPT_DEFAULTS.roadmap_generate);
+  await seedPromptIfMissing("prompt_roadmap_evolve", PROMPT_DEFAULTS.roadmap_evolve);
+  await seedPromptIfMissing("prompt_task_generate", PROMPT_DEFAULTS.task_generate);
+  await seedPromptIfMissing("prompt_incident_simulate", PROMPT_DEFAULTS.incident_simulate);
 
   const existingCompanies = await storage.getCompanies();
   if (existingCompanies.length === 0) {
@@ -178,9 +268,16 @@ export async function registerRoutes(
   });
 
   // ========== COMPANIES ==========
-  app.get(api.companies.list.path, async (_req, res) => {
-    const companies = await storage.getCompanies();
-    res.json(companies);
+  app.get(api.companies.list.path, async (req, res) => {
+    const allCompanies = await storage.getCompanies();
+    const authHeader = req.headers.authorization;
+    let isAdminRequest = false;
+    if (authHeader?.startsWith("Bearer ")) {
+      const decoded = verifyToken(authHeader.slice(7));
+      isAdminRequest = decoded?.role === "admin";
+    }
+    const result = isAdminRequest ? allCompanies : allCompanies.filter(c => c.visible !== false);
+    res.json(result);
   });
 
   app.get(api.companies.get.path, async (req, res) => {
@@ -224,26 +321,19 @@ export async function registerRoutes(
       const company = await storage.getCompany(Number(req.params.id));
       if (!company) return res.status(404).json({ message: "Company not found" });
 
+      const instruction = await getPrompt("prompt_company_suggest", PROMPT_DEFAULTS.company_suggest);
+
       const openai = await getOpenAIClient();
       const model = await getAIModel();
       const response = await openai.chat.completions.create({
         model,
         messages: [{
           role: "system",
-          content: `You are a CTO designing the technical foundation for a new data/AI engineering project.
+          content: `${instruction}
 
 Company: ${company.name}
 Industry: ${company.industry}
-Description: ${company.description}
-
-Based on this company's domain and goals, suggest a realistic technical setup. Return JSON with:
-
-- techStack: string — comma-separated list of technologies (e.g. "Python, Apache Spark, dbt, Snowflake, Airflow, Docker, Kubernetes, Terraform")
-- architecture: string — a brief description of the system architecture (2-3 sentences covering data flow, storage, processing, and serving layers)
-- phases: array of strings — ordered project phases the company would go through (e.g. ["Data Ingestion", "Data Storage & Modeling", "ETL/ELT Pipelines", "Analytics & Reporting", "Machine Learning", "MLOps & Monitoring"])
-- roles: array of strings — team roles needed (e.g. ["Data Engineer", "Data Analyst", "Data Scientist", "ML Engineer", "Analytics Engineer", "MLOps Engineer", "Software Engineer", "Stakeholder"])
-
-Make it realistic and specific to the industry. Include 5-8 phases and 4-8 roles.`
+Description: ${company.description}`,
         }],
         response_format: { type: "json_object" },
       });
@@ -255,6 +345,55 @@ Make it realistic and specific to the industry. Include 5-8 phases and 4-8 roles
     } catch (error) {
       console.error("Error generating suggestions:", error);
       res.status(500).json({ message: "Failed to generate suggestions" });
+    }
+  });
+
+  // ========== INCIDENT SIMULATION ==========
+  app.post("/api/companies/:id/incident", requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const company = await storage.getCompany(Number(req.params.id));
+      if (!company) return res.status(404).json({ message: "Company not found" });
+
+      const instruction = await getPrompt("prompt_incident_simulate", PROMPT_DEFAULTS.incident_simulate);
+
+      const openai = await getOpenAIClient();
+      const model = await getAIModel();
+      const response = await openai.chat.completions.create({
+        model,
+        messages: [{
+          role: "system",
+          content: `${instruction}
+
+Company: ${company.name}
+Industry: ${company.industry}
+Description: ${company.description}
+Tech Stack: ${company.techStack || "Not specified"}`,
+        }],
+        response_format: { type: "json_object" },
+      });
+
+      const content = response.choices[0]?.message?.content;
+      if (!content) throw new Error("Failed to generate incident");
+      const incident = JSON.parse(content);
+
+      const task = await storage.createTask({
+        companyId: company.id,
+        title: `[INCIDENT] ${incident.urgentTaskTitle || incident.incidentTitle || "Production Incident"}`,
+        description: incident.urgentTaskDescription || incident.incidentDescription || "Investigate and resolve production incident.",
+        requestedBy: "On-Call Engineer",
+        priority: "urgent",
+        projectArea: "DataOps",
+        assignedRole: "Data Engineer",
+        recommendedRole: "Data Engineer",
+        difficulty: "hard",
+        status: "in_progress",
+        businessContext: incident.businessImpact || null,
+      });
+
+      res.json({ incident, task });
+    } catch (error) {
+      console.error("Error simulating incident:", error);
+      res.status(500).json({ message: "Failed to simulate incident" });
     }
   });
 
@@ -274,13 +413,15 @@ Make it realistic and specific to the industry. Include 5-8 phases and 4-8 roles
         try { phases = JSON.parse(company.phases); } catch {}
       }
 
+      const instruction = await getPrompt("prompt_roadmap_generate", PROMPT_DEFAULTS.roadmap_generate);
+
       const openai = await getOpenAIClient();
       const model = await getAIModel();
       const response = await openai.chat.completions.create({
         model,
         messages: [{
           role: "system",
-          content: `You are a CTO creating a project roadmap for a data/AI engineering team.
+          content: `${instruction}
 
 Company: ${company.name}
 Industry: ${company.industry}
@@ -288,17 +429,7 @@ Description: ${company.description}
 Tech Stack: ${company.techStack || "Not specified"}
 Architecture: ${company.architecture || "Not specified"}
 ${phases.length > 0 ? `Project Phases: ${phases.join(", ")}` : ""}
-
-Generate a detailed roadmap with phases and milestones. Each milestone should be a concrete deliverable or achievement.
-
-Return JSON with:
-- roadmap: array of objects, each with:
-  - phase: string (phase name)
-  - milestone: string (specific milestone/deliverable name)
-  - description: string (brief description of what this milestone entails)
-
-Generate 3-5 milestones per phase. Order them logically — earlier phases should be foundational, later phases build on them.
-${phases.length > 0 ? `Use these phases: ${phases.join(", ")}` : "Use realistic data engineering project phases."}`
+${phases.length > 0 ? `Use these phases: ${phases.join(", ")}` : "Use realistic data engineering project phases."}`,
         }],
         response_format: { type: "json_object" },
       });
@@ -339,13 +470,15 @@ ${phases.length > 0 ? `Use these phases: ${phases.join(", ")}` : "Use realistic 
       const completedTasks = existingTasks.filter(t => t.status === "completed").map(t => t.title);
       const activeTasks = existingTasks.filter(t => t.status === "in_progress").map(t => `${t.title}${t.progressNotes ? ` (Progress: ${t.progressNotes})` : ""}`);
 
+      const instruction = await getPrompt("prompt_roadmap_evolve", PROMPT_DEFAULTS.roadmap_evolve);
+
       const openai = await getOpenAIClient();
       const model = await getAIModel();
       const response = await openai.chat.completions.create({
         model,
         messages: [{
           role: "system",
-          content: `You are a CTO simulating realistic project evolution for a data/AI team.
+          content: `${instruction}
 
 Company: ${company.name}
 Industry: ${company.industry}
@@ -356,24 +489,7 @@ Current roadmap phases and milestones:
 ${existingRoadmap.map(r => `- [${r.status}] ${r.phase}: ${r.milestone}`).join("\n")}
 
 Completed tasks: ${completedTasks.length > 0 ? completedTasks.join(", ") : "None yet"}
-Active tasks: ${activeTasks.length > 0 ? activeTasks.join("; ") : "None"}
-
-Introduce 1-3 realistic new events that would naturally occur in a growing data/AI company. These could be:
-- Stakeholder feature requests
-- Data quality incidents
-- Scaling/performance issues
-- ML model performance degradation
-- New regulatory requirements
-- Integration requests from other teams
-- Infrastructure failures or tech debt
-
-Return JSON with:
-- events: array of objects, each with:
-  - type: string (e.g. "feature_request", "incident", "scaling", "tech_debt", "regulation")
-  - title: string (brief event title)
-  - description: string (what happened)
-  - newMilestones: array of objects with { phase: string, milestone: string, description: string } — new roadmap items this event creates
-  - suggestedTaskTitle: string — a task title that should be created to address this event`
+Active tasks: ${activeTasks.length > 0 ? activeTasks.join("; ") : "None"}`,
         }],
         response_format: { type: "json_object" },
       });
@@ -497,13 +613,15 @@ Return JSON with:
         : null;
       const roleList = roles && Array.isArray(roles) ? roles.join(", ") : "Stakeholder, Data Engineer, Data Analyst, Data Scientist, ML Engineer, MLOps Engineer, Analytics Engineer, Software Engineer";
 
+      const instruction = await getPrompt("prompt_task_generate", PROMPT_DEFAULTS.task_generate);
+
       const openai = await getOpenAIClient();
       const model = await getAIModel();
       const response = await openai.chat.completions.create({
         model,
         messages: [{
           role: "system",
-          content: `You are a CTO assigning realistic engineering work to your data/AI team. You create tasks that resemble real Jira tickets — specific, actionable, and grounded in business needs.
+          content: `${instruction}
 
 Company: ${company?.name || "General"} (${company?.industry || "Technology"})
 Description: ${company?.description || "A technology company"}
@@ -516,20 +634,7 @@ ${progressContext ? `\nDeveloper Progress Context: ${progressContext}` : ""}
 Available team roles: ${roleList}
 
 IMPORTANT: Do NOT generate tasks similar to these recent ones:
-${recentTaskTitles.length > 0 ? recentTaskTitles.map(t => `- ${t}`).join("\n") : "No recent tasks yet."}
-
-Generate a realistic engineering task. Return JSON with:
-- title: string (concise, specific task title like a Jira ticket)
-- description: string (detailed technical description — what needs to be built, why, and key requirements)
-- requestedBy: string (the role requesting this work — pick from the available roles)
-- assignedRole: string (the role best suited to do this work)
-- priority: "low" | "medium" | "high" | "urgent"
-- projectArea: one of "Data Engineering", "Data Science", "Analytics", "MLOps", "DataOps", "Analytics Engineering"
-- difficulty: "easy" | "medium" | "hard" | "expert"
-- businessContext: string (1-2 sentences explaining WHY this task matters to the business)
-- subtasks: array of strings (3-6 specific subtasks/checklist items)
-- deliverables: array of strings (2-4 expected deliverables)
-- recommendedRole: string (same as assignedRole, for backward compatibility)`
+${recentTaskTitles.length > 0 ? recentTaskTitles.map(t => `- ${t}`).join("\n") : "No recent tasks yet."}`,
         }],
         response_format: { type: "json_object" },
       });
@@ -573,6 +678,52 @@ Generate a realistic engineering task. Return JSON with:
     } catch (error) {
       console.error("Error generating task:", error);
       res.status(500).json({ message: "Failed to generate task" });
+    }
+  });
+
+  // ========== GITHUB REPO PROXY ==========
+  app.get("/api/github-repo", async (req, res) => {
+    const url = String(req.query.url || "");
+    if (!url) return res.status(400).json({ message: "URL required" });
+
+    const match = url.match(/github\.com\/([^/]+)\/([^/?\s#]+)/);
+    if (!match) return res.status(400).json({ message: "Invalid GitHub URL" });
+
+    const [, owner, repo] = match;
+    const cacheKey = `${owner}/${repo}`;
+    const now = Date.now();
+
+    const cached = githubCache.get(cacheKey);
+    if (cached && cached.expires > now) return res.json(cached.data);
+
+    try {
+      const response = await fetch(`https://api.github.com/repos/${owner}/${repo}`, {
+        headers: {
+          "Accept": "application/vnd.github.v3+json",
+          "User-Agent": "DataSim-Portfolio/1.0",
+        },
+      });
+
+      if (!response.ok) {
+        return res.status(response.status).json({ message: "GitHub API error or private repo" });
+      }
+
+      const data = await response.json() as Record<string, unknown>;
+      const result = {
+        name: data.name,
+        description: data.description,
+        stars: data.stargazers_count,
+        language: data.language,
+        topics: (data.topics as string[]) || [],
+        lastCommit: data.pushed_at,
+        url: data.html_url,
+      };
+
+      githubCache.set(cacheKey, { data: result, expires: now + 3600000 });
+      res.json(result);
+    } catch (error) {
+      console.error("GitHub API error:", error);
+      res.status(500).json({ message: "Failed to fetch GitHub repo" });
     }
   });
 

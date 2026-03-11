@@ -1,4 +1,4 @@
-import { pgTable, text, serial, timestamp, varchar, integer } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, timestamp, varchar, integer, boolean } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
@@ -21,8 +21,10 @@ export const companies = pgTable("companies", {
   githubLink: text("github_link"),
   techStack: text("tech_stack"),
   architecture: text("architecture"),
+  architectureDiagram: text("architecture_diagram"),
   phases: text("phases"),
   roles: text("roles"),
+  visible: boolean("visible").default(true).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 

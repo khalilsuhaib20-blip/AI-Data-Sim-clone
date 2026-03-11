@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, lazy, Suspense } from "react";
 import { useTasks } from "@/hooks/use-tasks";
 import { useCompanies, useRoadmap } from "@/hooks/use-companies";
 import { Badge } from "@/components/ui/badge";
@@ -6,11 +6,87 @@ import { Button } from "@/components/ui/button";
 import {
   Loader2, Building2, Users, Briefcase, CheckCircle, Clock, ArrowLeft,
   Mail, GitBranch, Wrench, BarChart3, TrendingUp, FileText, ChevronRight,
-  Cpu, Layers, Target, ChevronDown, ChevronUp
+  Cpu, Layers, Target, ChevronDown, ChevronUp, Printer, AlertTriangle,
+  Database, Brain, Zap, LayoutDashboard, Code, UserCircle, Server,
 } from "lucide-react";
+import { SiLinkedin } from "react-icons/si";
 import { TimelineView } from "@/components/views/TimelineView";
 import { ContactModal } from "@/components/ContactModal";
+import { GitHubRepoCard } from "@/components/GitHubRepoCard";
+import { usePageMeta } from "@/hooks/use-page-meta";
 import type { Task, Company } from "@shared/schema";
+
+const MermaidDiagram = lazy(() =>
+  import("@/components/MermaidDiagram").then(m => ({ default: m.MermaidDiagram }))
+);
+
+const TECH_CATEGORY_MAP: { label: string; color: string; tools: string[] }[] = [
+  {
+    label: "Microsoft",
+    color: "bg-blue-500/10 text-blue-700 border-blue-500/20 dark:text-blue-400",
+    tools: ["Excel", "Power BI", "Power Apps", "Power Automate", "Power Virtual Agents", "Azure Data Factory", "Azure Synapse Analytics", "Microsoft Fabric"],
+  },
+  {
+    label: "Data Engineering",
+    color: "bg-violet-500/10 text-violet-700 border-violet-500/20 dark:text-violet-400",
+    tools: ["Apache Kafka", "Apache Flink", "Apache Spark", "Apache Airflow", "dbt", "Fivetran", "Airbyte", "Databricks", "Snowflake", "BigQuery", "Amazon Redshift", "PostgreSQL", "MySQL", "MongoDB"],
+  },
+  {
+    label: "ML / AI",
+    color: "bg-emerald-500/10 text-emerald-700 border-emerald-500/20 dark:text-emerald-400",
+    tools: ["Python", "scikit-learn", "TensorFlow", "PyTorch", "MLflow", "Evidently AI", "Hugging Face", "LangChain", "OpenAI"],
+  },
+  {
+    label: "DevOps / Infra",
+    color: "bg-orange-500/10 text-orange-700 border-orange-500/20 dark:text-orange-400",
+    tools: ["Kubernetes", "Docker", "Terraform", "GitHub Actions", "AWS", "GCP", "Azure", "Helm"],
+  },
+  {
+    label: "Analytics / BI",
+    color: "bg-amber-500/10 text-amber-700 border-amber-500/20 dark:text-amber-400",
+    tools: ["Tableau", "Looker", "Metabase", "Grafana", "Apache Superset"],
+  },
+];
+
+function getTechColor(tool: string): string {
+  const normalized = tool.trim().toLowerCase();
+  for (const cat of TECH_CATEGORY_MAP) {
+    if (cat.tools.some(t => t.toLowerCase() === normalized)) return cat.color;
+  }
+  return "bg-secondary/80 text-secondary-foreground border-border/40";
+}
+
+function getTechCategoryLabel(tool: string): string {
+  const normalized = tool.trim().toLowerCase();
+  for (const cat of TECH_CATEGORY_MAP) {
+    if (cat.tools.some(t => t.toLowerCase() === normalized)) return cat.label;
+  }
+  return "Other";
+}
+
+const ROLE_ICONS: Record<string, any> = {
+  "data engineer": Database,
+  "data engineering": Database,
+  "data scientist": Brain,
+  "data science": Brain,
+  "ml engineer": Zap,
+  "mlops engineer": Zap,
+  "mlops": Zap,
+  "data analyst": BarChart3,
+  "analytics engineer": BarChart3,
+  "software engineer": Code,
+  "backend engineer": Server,
+  "frontend engineer": LayoutDashboard,
+  "stakeholder": UserCircle,
+};
+
+function getRoleIcon(role: string) {
+  const key = role.toLowerCase();
+  for (const [k, Icon] of Object.entries(ROLE_ICONS)) {
+    if (key.includes(k)) return Icon;
+  }
+  return UserCircle;
+}
 
 function parseJsonArray(val: string | null | undefined): string[] {
   if (!val) return [];
@@ -20,6 +96,16 @@ function parseJsonArray(val: string | null | undefined): string[] {
   } catch {
     return val.includes(",") ? val.split(",").map(s => s.trim()).filter(Boolean) : [val];
   }
+}
+
+function groupTechStack(techStack: string[]): Record<string, string[]> {
+  const groups: Record<string, string[]> = {};
+  for (const tool of techStack) {
+    const cat = getTechCategoryLabel(tool);
+    if (!groups[cat]) groups[cat] = [];
+    groups[cat].push(tool);
+  }
+  return groups;
 }
 
 export default function PortfolioDashboard() {
@@ -47,17 +133,18 @@ export default function PortfolioDashboard() {
       });
       const companyRoles = parseJsonArray(c.roles);
       companyRoles.forEach(r => roles.add(r));
-      const techStack = parseJsonArray(c.techStack);
+      const techStack = parseJsonArray((c as any).techStack);
       return {
         ...c,
         taskCount: companyTasks.length,
         completedCount: companyTasks.filter((t: Task) => t.status === "completed").length,
         inProgressCount: companyTasks.filter((t: Task) => t.status === "in_progress").length,
+        incidentCount: companyTasks.filter((t: Task) => t.title?.startsWith("[INCIDENT]")).length,
         roles: Array.from(roles),
         areas: Array.from(areas),
         tasks: companyTasks,
         techStackParsed: techStack,
-        phasesParsed: parseJsonArray(c.phases),
+        phasesParsed: parseJsonArray((c as any).phases),
       };
     });
   }, [companies, tasks]);
@@ -77,15 +164,9 @@ export default function PortfolioDashboard() {
       if (t.recommendedRole) allRoles.add(t.recommendedRole);
       if (t.assignedRole) allRoles.add(t.assignedRole);
       allAreas.add(t.projectArea);
-      [t.solutionNotes, t.architectureNotes].forEach(notes => {
-        if (notes) {
-          const toolMatches = notes.match(/(?:Apache\s+)?\b(?:Kafka|Flink|Spark|dbt|Snowflake|Fivetran|MLflow|Kubernetes|Evidently|Docker|Airflow|PostgreSQL|Python|SQL|Pandas|TensorFlow|PyTorch|Scikit-learn|AWS|GCP|Azure|BigQuery|Redshift|Looker|Tableau|Power BI|Databricks|Delta Lake|Great Expectations)\b/gi);
-          if (toolMatches) toolMatches.forEach(t => allTools.add(t));
-        }
-      });
     });
     companies.forEach((c: Company) => {
-      const ts = parseJsonArray(c.techStack);
+      const ts = parseJsonArray((c as any).techStack);
       ts.forEach(t => allTools.add(t));
     });
     return {
@@ -117,13 +198,13 @@ export default function PortfolioDashboard() {
   }
 
   return (
-    <div className="flex-1 flex flex-col">
+    <div className="flex-1 flex flex-col overflow-x-hidden">
       <div className="border-b border-border/40 bg-card/50">
         <div className="max-w-[1200px] mx-auto px-4 sm:px-6 lg:px-8 py-10">
-          <h1 className="text-4xl md:text-5xl font-display font-extrabold tracking-tight" data-testid="text-portfolio-heading">
+          <h1 className="text-3xl sm:text-4xl md:text-5xl font-display font-extrabold tracking-tight" data-testid="text-portfolio-heading">
             Data Engineering <span className="text-transparent bg-clip-text bg-gradient-to-r from-primary to-blue-500">Portfolio</span>
           </h1>
-          <p className="text-muted-foreground mt-3 text-lg max-w-2xl">
+          <p className="text-muted-foreground mt-3 text-base sm:text-lg max-w-2xl">
             Simulated projects across industries — exploring Data Engineering, Data Science, Analytics, and MLOps through real-world scenarios.
           </p>
         </div>
@@ -135,7 +216,7 @@ export default function PortfolioDashboard() {
           {projectData.map(project => (
             <button
               key={project.id}
-              className="text-left bg-card rounded-2xl border border-border/50 p-5 card-hover group cursor-pointer"
+              className="text-left bg-card rounded-2xl border border-border/50 p-5 card-hover group cursor-pointer w-full"
               onClick={() => setSelectedProject(project.id)}
               data-testid={`project-card-${project.id}`}
             >
@@ -145,7 +226,7 @@ export default function PortfolioDashboard() {
                 </div>
                 <div className="flex items-center gap-2">
                   {project.githubLink && (
-                    <a href={project.githubLink} target="_blank" rel="noreferrer" className="text-muted-foreground hover:text-primary transition-colors" onClick={e => e.stopPropagation()} data-testid={`project-github-${project.id}`}>
+                    <a href={(project as any).githubLink} target="_blank" rel="noreferrer" className="text-muted-foreground hover:text-primary transition-colors" onClick={e => e.stopPropagation()} data-testid={`project-github-${project.id}`}>
                       <GitBranch className="w-4 h-4" />
                     </a>
                   )}
@@ -181,23 +262,9 @@ export default function PortfolioDashboard() {
                   </p>
                   <div className="flex flex-wrap gap-1">
                     {project.techStackParsed.slice(0, 5).map((t: string) => (
-                      <Badge key={t} variant="secondary" className="text-[10px] px-1.5 py-0 h-5">{t}</Badge>
+                      <Badge key={t} variant="outline" className={`text-[10px] px-1.5 py-0 h-5 ${getTechColor(t)}`}>{t}</Badge>
                     ))}
                     {project.techStackParsed.length > 5 && <Badge variant="secondary" className="text-[10px] px-1.5 py-0 h-5">+{project.techStackParsed.length - 5}</Badge>}
-                  </div>
-                </div>
-              )}
-
-              {project.roles.length > 0 && (
-                <div className="mb-3">
-                  <p className="text-[10px] text-muted-foreground font-semibold uppercase tracking-wider mb-1.5 flex items-center gap-1">
-                    <Users className="w-3 h-3" /> Roles
-                  </p>
-                  <div className="flex flex-wrap gap-1">
-                    {project.roles.slice(0, 4).map(r => (
-                      <Badge key={r} variant="outline" className="text-[10px] px-1.5 py-0 h-5">{r}</Badge>
-                    ))}
-                    {project.roles.length > 4 && <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-5">+{project.roles.length - 4}</Badge>}
                   </div>
                 </div>
               )}
@@ -215,8 +282,15 @@ export default function PortfolioDashboard() {
                 </div>
               )}
 
-              <div className="flex items-center justify-end text-xs text-primary font-medium gap-1 pt-2 border-t border-border/30">
-                View Tasks <ChevronRight className="w-3.5 h-3.5" />
+              <div className="flex items-center justify-between mt-auto pt-2 border-t border-border/30">
+                {project.incidentCount > 0 && (
+                  <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-5 bg-red-500/10 text-red-600 border-red-500/20 gap-1">
+                    <AlertTriangle className="w-2.5 h-2.5" /> {project.incidentCount} incident{project.incidentCount > 1 ? "s" : ""}
+                  </Badge>
+                )}
+                <div className="ml-auto flex items-center text-xs text-primary font-medium gap-1">
+                  View Tasks <ChevronRight className="w-3.5 h-3.5" />
+                </div>
               </div>
             </button>
           ))}
@@ -233,7 +307,7 @@ export default function PortfolioDashboard() {
         </div>
 
         <SectionHeading icon={<TrendingUp className="w-5 h-5 text-blue-500" />} title="Milestones & Overview" subtitle="Summary of skills, tools, and topics covered across all projects" />
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
           <MilestoneCard icon={<Building2 className="w-5 h-5 text-blue-500" />} label="Projects" value={overallStats.companies} />
           <MilestoneCard icon={<BarChart3 className="w-5 h-5 text-purple-500" />} label="Total Tasks" value={overallStats.totalTasks} />
           <MilestoneCard icon={<CheckCircle className="w-5 h-5 text-emerald-500" />} label="Completed" value={overallStats.completed} />
@@ -260,11 +334,33 @@ function ProjectDetail({ project, companyMap, contactTask, setContactTask, onBac
   onBack: () => void;
 }) {
   const [showRoadmap, setShowRoadmap] = useState(false);
+  const [showDiagram, setShowDiagram] = useState(false);
   const { data: roadmap = [] } = useRoadmap(project.id);
   const phases = [...new Set(roadmap.map((r: any) => r.phase))];
 
+  const top3Tech = project.techStackParsed.slice(0, 3).join(", ");
+  const linkedInCaption = `Just shipped: ${project.name} — a ${project.industry} data platform. Built with ${top3Tech || "cutting-edge tools"}. Full case study 👇`;
+  const currentUrl = typeof window !== "undefined" ? `${window.location.origin}/` : "";
+  const linkedInUrl = `https://www.linkedin.com/shareArticle?mini=true&url=${encodeURIComponent(currentUrl)}&title=${encodeURIComponent(`${project.name} — ${project.industry} Data Platform | DataSim`)}&summary=${encodeURIComponent(linkedInCaption)}&source=DataSim`;
+
+  const pageTitle = `${project.name} — ${project.industry} Data Platform | DataSim Portfolio`;
+  const pageDesc = (project.description || "").slice(0, 157) + (project.description?.length > 157 ? "..." : "");
+  usePageMeta(pageTitle, pageDesc, currentUrl);
+
+  const techGroups = groupTechStack(project.techStackParsed);
+
+  const phaseProgress = useMemo(() => {
+    if (!roadmap.length || !phases.length) return [];
+    return phases.map((phase: string) => {
+      const items = roadmap.filter((r: any) => r.phase === phase);
+      const done = items.filter((r: any) => r.status === "completed").length;
+      const pct = items.length ? Math.round((done / items.length) * 100) : 0;
+      return { phase, total: items.length, done, pct };
+    });
+  }, [roadmap, phases]);
+
   return (
-    <div className="flex-1 flex flex-col">
+    <div className="flex-1 flex flex-col overflow-x-hidden">
       <div className="border-b border-border/40 bg-card/50">
         <div className="max-w-[1200px] mx-auto px-4 sm:px-6 lg:px-8 py-5">
           <Button variant="ghost" size="sm" className="mb-3 text-muted-foreground -ml-2" onClick={onBack} data-testid="button-back-projects">
@@ -272,11 +368,11 @@ function ProjectDetail({ project, companyMap, contactTask, setContactTask, onBac
           </Button>
           <div className="flex items-start justify-between gap-4 flex-wrap">
             <div className="flex items-center gap-4">
-              <div className="w-12 h-12 rounded-2xl bg-primary/10 flex items-center justify-center">
+              <div className="w-12 h-12 rounded-2xl bg-primary/10 flex items-center justify-center shrink-0">
                 <Building2 className="w-6 h-6 text-primary" />
               </div>
               <div>
-                <div className="flex items-center gap-3">
+                <div className="flex items-center gap-3 flex-wrap">
                   <h1 className="text-2xl font-display font-bold" data-testid="text-project-name">{project.name}</h1>
                   {project.githubLink && (
                     <a href={project.githubLink} target="_blank" rel="noreferrer" className="text-muted-foreground hover:text-primary transition-colors" data-testid="project-detail-github">
@@ -290,34 +386,124 @@ function ProjectDetail({ project, companyMap, contactTask, setContactTask, onBac
                 </div>
               </div>
             </div>
-            <div className="flex items-center gap-4 text-sm">
-              <span className="font-semibold">{project.taskCount} <span className="font-normal text-muted-foreground">tasks</span></span>
-              <span className="text-emerald-600 font-semibold">{project.completedCount} <span className="font-normal text-muted-foreground">done</span></span>
-              <span className="text-blue-600 font-semibold">{project.inProgressCount} <span className="font-normal text-muted-foreground">active</span></span>
+            <div className="flex items-center gap-3 flex-wrap">
+              <div className="flex items-center gap-4 text-sm">
+                <span className="font-semibold">{project.taskCount} <span className="font-normal text-muted-foreground">tasks</span></span>
+                <span className="text-emerald-600 font-semibold">{project.completedCount} <span className="font-normal text-muted-foreground">done</span></span>
+                <span className="text-blue-600 font-semibold">{project.inProgressCount} <span className="font-normal text-muted-foreground">active</span></span>
+              </div>
+              <a href={linkedInUrl} target="_blank" rel="noreferrer" data-testid="button-share-linkedin">
+                <Button variant="outline" size="sm" className="gap-1.5 text-xs">
+                  <SiLinkedin className="w-3.5 h-3.5 text-[#0077b5]" /> Share
+                </Button>
+              </a>
             </div>
           </div>
           <p className="text-sm text-muted-foreground mt-3 max-w-3xl">{project.description}</p>
 
-          {(project.architecture || project.techStackParsed.length > 0 || project.phasesParsed.length > 0) && (
-            <div className="mt-4 flex flex-wrap gap-4">
-              {project.techStackParsed.length > 0 && (
+          {project.githubLink && (
+            <div className="mt-4 max-w-sm">
+              <GitHubRepoCard githubUrl={project.githubLink} />
+            </div>
+          )}
+
+          {(Object.keys(techGroups).length > 0 || project.architecture || project.phasesParsed.length > 0) && (
+            <div className="mt-5 space-y-4">
+              {Object.keys(techGroups).length > 0 && (
                 <div>
-                  <p className="text-[10px] text-muted-foreground font-semibold uppercase tracking-wider mb-1 flex items-center gap-1">
+                  <p className="text-[10px] text-muted-foreground font-semibold uppercase tracking-wider mb-2 flex items-center gap-1">
                     <Cpu className="w-3 h-3" /> Tech Stack
                   </p>
-                  <div className="flex flex-wrap gap-1">
-                    {project.techStackParsed.map((t: string) => (
-                      <Badge key={t} variant="secondary" className="text-xs">{t}</Badge>
+                  <div className="space-y-2">
+                    {Object.entries(techGroups).map(([cat, tools]) => (
+                      <div key={cat} className="flex items-start gap-2 flex-wrap">
+                        <span className="text-[10px] font-semibold text-muted-foreground bg-secondary/50 px-2 py-0.5 rounded-full shrink-0 mt-0.5">{cat}</span>
+                        <div className="flex flex-wrap gap-1">
+                          {tools.map(t => (
+                            <Badge key={t} variant="outline" className={`text-xs ${getTechColor(t)}`}>{t}</Badge>
+                          ))}
+                        </div>
+                      </div>
                     ))}
                   </div>
                 </div>
               )}
+
               {project.architecture && (
-                <div className="max-w-md">
+                <div className="border-l-2 border-primary/30 pl-3">
                   <p className="text-[10px] text-muted-foreground font-semibold uppercase tracking-wider mb-1 flex items-center gap-1">
                     <Layers className="w-3 h-3" /> Architecture
                   </p>
                   <p className="text-xs text-foreground/80">{project.architecture}</p>
+                </div>
+              )}
+
+              {(project as any).architectureDiagram && (
+                <div>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="text-xs text-muted-foreground gap-1 -ml-2"
+                    onClick={() => setShowDiagram(!showDiagram)}
+                    data-testid="button-toggle-diagram"
+                  >
+                    <Layers className="w-3.5 h-3.5" /> Architecture Diagram
+                    {showDiagram ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+                  </Button>
+                  {showDiagram && (
+                    <div className="mt-2 rounded-xl border border-border/50 bg-secondary/10 p-4 overflow-x-auto">
+                      <Suspense fallback={<div className="text-xs text-muted-foreground py-2">Loading diagram...</div>}>
+                        <MermaidDiagram chart={(project as any).architectureDiagram} />
+                      </Suspense>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {project.phasesParsed.length > 0 && (
+                <div>
+                  <p className="text-[10px] text-muted-foreground font-semibold uppercase tracking-wider mb-2 flex items-center gap-1">
+                    <Target className="w-3 h-3" /> Project Phases
+                  </p>
+                  <div className="flex gap-2 flex-wrap overflow-x-auto pb-1">
+                    {project.phasesParsed.map((phase: string, i: number) => {
+                      const prog = phaseProgress.find(p => p.phase === phase);
+                      const isActive = prog && prog.pct > 0 && prog.pct < 100;
+                      const isDone = prog && prog.pct === 100;
+                      return (
+                        <div key={i} className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs font-medium ${
+                          isDone ? "bg-emerald-500/10 text-emerald-700 border-emerald-500/20" :
+                          isActive ? "bg-blue-500/10 text-blue-700 border-blue-500/20" :
+                          "bg-secondary/50 text-muted-foreground border-border/30"
+                        }`} data-testid={`phase-chip-${i}`}>
+                          {isDone && <CheckCircle className="w-3 h-3" />}
+                          {isActive && <Clock className="w-3 h-3" />}
+                          {!isDone && !isActive && <span className="w-3 h-3 rounded-full border border-current flex items-center justify-center text-[8px] font-bold">{i + 1}</span>}
+                          <span>{phase}</span>
+                          {prog && <span className="text-[10px] opacity-70">{prog.pct}%</span>}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {project.roles.length > 0 && (
+                <div>
+                  <p className="text-[10px] text-muted-foreground font-semibold uppercase tracking-wider mb-2 flex items-center gap-1">
+                    <Users className="w-3 h-3" /> Roles
+                  </p>
+                  <div className="flex flex-wrap gap-2">
+                    {project.roles.slice(0, 8).map((role: string) => {
+                      const Icon = getRoleIcon(role);
+                      return (
+                        <div key={role} className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg border border-border/40 bg-secondary/30 text-xs font-medium" data-testid={`role-chip-${role}`}>
+                          <Icon className="w-3 h-3 text-primary/70" />
+                          {role}
+                        </div>
+                      );
+                    })}
+                  </div>
                 </div>
               )}
             </div>
@@ -325,34 +511,51 @@ function ProjectDetail({ project, companyMap, contactTask, setContactTask, onBac
 
           {roadmap.length > 0 && (
             <div className="mt-4">
-              <Button variant="ghost" size="sm" className="text-xs text-muted-foreground gap-1 -ml-2" onClick={() => setShowRoadmap(!showRoadmap)} data-testid="button-toggle-roadmap">
-                <Target className="w-3.5 h-3.5" /> Roadmap ({roadmap.length} milestones)
-                {showRoadmap ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
-              </Button>
+              <div className="flex items-center gap-2 flex-wrap">
+                <Button variant="ghost" size="sm" className="text-xs text-muted-foreground gap-1 -ml-2" onClick={() => setShowRoadmap(!showRoadmap)} data-testid="button-toggle-roadmap">
+                  <Target className="w-3.5 h-3.5" /> Roadmap ({roadmap.length} milestones)
+                  {showRoadmap ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+                </Button>
+                {showRoadmap && (
+                  <Button variant="ghost" size="sm" className="text-xs text-muted-foreground gap-1" onClick={() => window.print()} data-testid="button-print-roadmap">
+                    <Printer className="w-3.5 h-3.5" /> Export PDF
+                  </Button>
+                )}
+              </div>
               {showRoadmap && (
-                <div className="mt-2 space-y-3">
-                  {phases.map((phase: string) => {
-                    const items = roadmap.filter((r: any) => r.phase === phase);
-                    return (
-                      <div key={phase} className="bg-secondary/20 rounded-lg p-3 border border-border/30">
-                        <h4 className="text-xs font-semibold mb-2">{phase}</h4>
-                        <div className="space-y-1">
-                          {items.map((r: any) => (
-                            <div key={r.id} className="flex items-center gap-2 text-xs" data-testid={`roadmap-item-${r.id}`}>
-                              {r.status === "completed" ? (
-                                <CheckCircle className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
-                              ) : r.status === "in_progress" ? (
-                                <Clock className="w-3.5 h-3.5 text-blue-500 shrink-0" />
-                              ) : (
-                                <div className="w-3.5 h-3.5 rounded-full border border-border/60 shrink-0" />
-                              )}
-                              <span className={r.status === "completed" ? "text-muted-foreground line-through" : "text-foreground/80"}>{r.milestone}</span>
-                            </div>
-                          ))}
+                <div id="roadmap-print-target" data-company={project.name} className="mt-2">
+                  <div className="hidden print:block mb-6">
+                    <h1 className="text-2xl font-bold">{project.name}</h1>
+                    <p className="text-muted-foreground">Project Roadmap — {project.industry}</p>
+                    <p className="text-xs text-muted-foreground mt-1">Generated: {new Date().toLocaleDateString()}</p>
+                  </div>
+                  <div className="space-y-3">
+                    {phases.map((phase: string) => {
+                      const items = roadmap.filter((r: any) => r.phase === phase);
+                      return (
+                        <div key={phase} className="bg-secondary/20 rounded-lg p-3 border border-border/30 print:border-0 print:rounded-none print:bg-white print:page-break-inside-avoid">
+                          <h4 className="text-xs font-semibold mb-2 print:text-base print:font-bold print:border-b print:border-gray-200 print:pb-1">{phase}</h4>
+                          <div className="space-y-1">
+                            {items.map((r: any) => (
+                              <div key={r.id} className="flex items-center gap-2 text-xs print:text-sm" data-testid={`roadmap-item-${r.id}`}>
+                                {r.status === "completed" ? (
+                                  <CheckCircle className="w-3.5 h-3.5 text-emerald-500 shrink-0 print:hidden" />
+                                ) : r.status === "in_progress" ? (
+                                  <Clock className="w-3.5 h-3.5 text-blue-500 shrink-0 print:hidden" />
+                                ) : (
+                                  <div className="w-3.5 h-3.5 rounded-full border border-border/60 shrink-0 print:hidden" />
+                                )}
+                                <span className="hidden print:inline print:mr-2">
+                                  {r.status === "completed" ? "✓" : r.status === "in_progress" ? "→" : "○"}
+                                </span>
+                                <span className={r.status === "completed" ? "text-muted-foreground line-through print:no-underline print:text-gray-600" : "text-foreground/80"}>{r.milestone}</span>
+                              </div>
+                            ))}
+                          </div>
                         </div>
-                      </div>
-                    );
-                  })}
+                      );
+                    })}
+                  </div>
                 </div>
               )}
             </div>
@@ -374,18 +577,25 @@ function ProjectDetail({ project, companyMap, contactTask, setContactTask, onBac
 function CompletedTaskCard({ task, companyMap, onContact }: { task: Task; companyMap: Record<number, string>; onContact: (t: Task) => void }) {
   const subtasks = parseJsonArray(task.subtasks);
   const deliverables = parseJsonArray(task.deliverables);
+  const isIncident = task.title?.startsWith("[INCIDENT]");
+  const displayTitle = isIncident ? task.title.replace("[INCIDENT] ", "") : task.title;
 
   return (
-    <div className="bg-card rounded-xl border border-border/50 border-l-4 border-l-emerald-500 p-5" data-testid={`completed-task-${task.id}`}>
+    <div className={`bg-card rounded-xl border p-5 ${isIncident ? "border-l-4 border-l-red-500 border-red-500/30" : "border-border/50 border-l-4 border-l-emerald-500"}`} data-testid={`completed-task-${task.id}`}>
       <div className="flex items-start justify-between gap-3 mb-2">
-        <h4 className="font-display font-bold text-sm">{task.title}</h4>
+        <div className="flex items-start gap-2 min-w-0">
+          {isIncident && <AlertTriangle className="w-4 h-4 text-red-500 shrink-0 mt-0.5" />}
+          <h4 className="font-display font-bold text-sm">{displayTitle}</h4>
+        </div>
         <div className="flex items-center gap-1.5 shrink-0">
           {task.difficulty && (
             <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-5 capitalize">{task.difficulty}</Badge>
           )}
-          <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-5 bg-emerald-500/10 text-emerald-600 border-emerald-500/20">
-            Completed
-          </Badge>
+          {isIncident ? (
+            <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-5 bg-red-500/10 text-red-600 border-red-500/20">Incident</Badge>
+          ) : (
+            <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-5 bg-emerald-500/10 text-emerald-600 border-emerald-500/20">Completed</Badge>
+          )}
         </div>
       </div>
       <p className="text-xs text-muted-foreground line-clamp-2 mb-3">{task.description}</p>
@@ -474,3 +684,4 @@ function TagCloud({ title, icon, items, color, testId }: { title: string; icon: 
     </div>
   );
 }
+

@@ -2,13 +2,28 @@ import { useRoute, Link } from "wouter";
 import { useTask } from "@/hooks/use-tasks";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { ArrowLeft, Clock, User, Briefcase, GitBranch, FileText, ExternalLink, Loader2 } from "lucide-react";
+import { ArrowLeft, Clock, User, Briefcase, GitBranch, FileText, ExternalLink, Loader2, Share2 } from "lucide-react";
+import { SiLinkedin } from "react-icons/si";
 import { format } from "date-fns";
+import { GitHubRepoCard } from "@/components/GitHubRepoCard";
+import { usePageMeta } from "@/hooks/use-page-meta";
+
+function parseJsonArray(val: string | null | undefined): string[] {
+  if (!val) return [];
+  try {
+    const p = JSON.parse(val);
+    return Array.isArray(p) ? p : [];
+  } catch { return []; }
+}
 
 export default function TaskDetails() {
   const [, params] = useRoute("/tasks/:id");
   const id = Number(params?.id);
   const { data: task, isLoading } = useTask(id);
+
+  const title = task ? `${task.title} | DataSim Portfolio` : "Task | DataSim Portfolio";
+  const description = task?.businessContext || task?.description || "Data engineering task from DataSim Portfolio.";
+  usePageMeta(title, description, typeof window !== "undefined" ? window.location.href : "");
 
   if (isLoading) {
     return (
@@ -22,7 +37,7 @@ export default function TaskDetails() {
     return (
       <div className="max-w-4xl mx-auto px-4 py-12 text-center">
         <p className="text-muted-foreground">Task not found.</p>
-        <Link href="/tasks"><Button variant="outline" className="mt-4">Back to Tasks</Button></Link>
+        <Link href="/"><Button variant="outline" className="mt-4">Back to Portfolio</Button></Link>
       </div>
     );
   }
@@ -40,11 +55,24 @@ export default function TaskDetails() {
     completed: "bg-emerald-500/10 text-emerald-600",
   };
 
+  const subtasks = parseJsonArray(task.subtasks);
+  const deliverables = parseJsonArray(task.deliverables);
+  const isIncident = task.title?.startsWith("[INCIDENT]");
+  const displayTitle = isIncident ? task.title.replace("[INCIDENT] ", "") : task.title;
+
+  const linkedInCaption = [
+    `Completed: ${displayTitle}`,
+    task.projectArea ? `| ${task.projectArea}` : "",
+    task.businessContext ? `\n${task.businessContext.slice(0, 120)}...` : "",
+    `\nFull write-up 👇`,
+  ].join(" ");
+  const linkedInUrl = `https://www.linkedin.com/shareArticle?mini=true&url=${encodeURIComponent(typeof window !== "undefined" ? window.location.href : "")}&title=${encodeURIComponent(displayTitle)}&summary=${encodeURIComponent(linkedInCaption)}&source=DataSim`;
+
   return (
     <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
-      <Link href="/tasks">
+      <Link href="/">
         <Button variant="ghost" className="mb-6 text-muted-foreground" data-testid="button-back">
-          <ArrowLeft className="w-4 h-4 mr-2" /> Back to Tasks
+          <ArrowLeft className="w-4 h-4 mr-2" /> Back to Portfolio
         </Button>
       </Link>
 
@@ -54,6 +82,11 @@ export default function TaskDetails() {
             <Badge variant="outline" className={`capitalize ${priorityColors[task.priority] || ""}`} data-testid="badge-priority">
               {task.priority}
             </Badge>
+            {isIncident && (
+              <Badge variant="outline" className="bg-red-500/10 text-red-600 border-red-500/20">
+                Incident
+              </Badge>
+            )}
             <Badge variant="outline" className={`capitalize ${statusColors[task.status] || ""}`} data-testid="badge-status">
               {task.status?.replace("_", " ")}
             </Badge>
@@ -61,13 +94,20 @@ export default function TaskDetails() {
               {task.projectArea}
             </Badge>
           </div>
-          <div className="flex items-center text-muted-foreground text-sm gap-1">
-            <Clock className="w-4 h-4" />
-            {task.createdAt && format(new Date(task.createdAt), "MMM d, yyyy")}
+          <div className="flex items-center gap-3">
+            <div className="flex items-center text-muted-foreground text-sm gap-1">
+              <Clock className="w-4 h-4" />
+              {task.createdAt && format(new Date(task.createdAt), "MMM d, yyyy")}
+            </div>
+            <a href={linkedInUrl} target="_blank" rel="noreferrer" data-testid="button-share-linkedin">
+              <Button variant="outline" size="sm" className="gap-1.5 text-xs">
+                <SiLinkedin className="w-3.5 h-3.5 text-[#0077b5]" /> Share
+              </Button>
+            </a>
           </div>
         </div>
 
-        <h1 className="text-3xl font-display font-bold mb-4" data-testid="text-task-title">{task.title}</h1>
+        <h1 className="text-3xl font-display font-bold mb-4" data-testid="text-task-title">{displayTitle}</h1>
         <p className="text-muted-foreground leading-relaxed mb-8">{task.description}</p>
 
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-8 bg-secondary/30 p-4 rounded-xl border border-border/50">
@@ -91,6 +131,38 @@ export default function TaskDetails() {
           </div>
         </div>
 
+        {task.businessContext && (
+          <div className="mb-6 bg-amber-500/5 border border-amber-500/20 rounded-xl p-4">
+            <h3 className="font-display font-bold mb-2 text-amber-700 dark:text-amber-400 text-sm">Business Context</h3>
+            <p className="text-sm text-foreground/80">{task.businessContext}</p>
+          </div>
+        )}
+
+        {subtasks.length > 0 && (
+          <div className="mb-6">
+            <h3 className="font-display font-bold mb-3 text-sm">Subtasks</h3>
+            <ul className="space-y-2">
+              {subtasks.map((st, i) => (
+                <li key={i} className="flex items-start gap-2 text-sm">
+                  <span className="w-5 h-5 rounded border border-border/50 flex items-center justify-center shrink-0 mt-0.5 text-[10px] text-muted-foreground font-bold">{i + 1}</span>
+                  {st}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
+        {deliverables.length > 0 && (
+          <div className="mb-6">
+            <h3 className="font-display font-bold mb-3 text-sm">Deliverables</h3>
+            <div className="flex flex-wrap gap-2">
+              {deliverables.map((d, i) => (
+                <Badge key={i} variant="outline" className="text-xs">{d}</Badge>
+              ))}
+            </div>
+          </div>
+        )}
+
         {task.solutionNotes && (
           <div className="mb-6">
             <h3 className="font-display font-bold mb-2 flex items-center gap-2">
@@ -108,6 +180,15 @@ export default function TaskDetails() {
             <div className="bg-secondary/30 rounded-xl p-4 border border-border/50">
               <p className="text-sm text-foreground/80 whitespace-pre-wrap">{task.architectureNotes}</p>
             </div>
+          </div>
+        )}
+
+        {task.githubLink && (
+          <div className="mb-6">
+            <h3 className="font-display font-bold mb-3 text-sm flex items-center gap-2">
+              <GitBranch className="w-4 h-4" /> Repository
+            </h3>
+            <GitHubRepoCard githubUrl={task.githubLink} />
           </div>
         )}
 

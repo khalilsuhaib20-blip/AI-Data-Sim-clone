@@ -12,8 +12,9 @@ import { useToast } from "@/hooks/use-toast";
 import {
   Pencil, Trash2, Save, Loader2, Sparkles,
   GitBranch, ExternalLink, CheckCircle, XCircle, Clock,
-  MessageCircle, ListChecks, FileText, User, Zap
+  MessageCircle, ListChecks, FileText, User, Zap, Play
 } from "lucide-react";
+import { TaskWorkflow } from "@/components/TaskWorkflow";
 
 interface TaskForm {
   title: string;
@@ -76,6 +77,7 @@ export default function ManageTasks() {
   const [editTask, setEditTask] = useState<any | null>(null);
   const [form, setForm] = useState<TaskForm>({} as TaskForm);
   const [detailTask, setDetailTask] = useState<any | null>(null);
+  const [workflowTask, setWorkflowTask] = useState<any | null>(null);
 
   const getCompanyName = (companyId: number | null) => {
     if (!companyId) return null;
@@ -239,6 +241,20 @@ export default function ManageTasks() {
                     <StatusIcon className="w-3 h-3 mr-1" />
                     {sc.label}
                   </Badge>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="gap-1 text-xs"
+                    onClick={() => setWorkflowTask(task)}
+                    data-testid={`button-work-${task.id}`}
+                  >
+                    {task.status === "completed"
+                      ? <CheckCircle className="w-3.5 h-3.5 text-emerald-500" />
+                      : task.status === "in_progress"
+                      ? <Clock className="w-3.5 h-3.5 text-blue-500" />
+                      : <Play className="w-3.5 h-3.5" />}
+                    {task.status === "backlog" ? "Start" : task.status === "in_progress" ? "Continue" : "View"}
+                  </Button>
                   <Button variant="outline" size="icon" onClick={() => openEdit(task)} data-testid={`button-edit-task-${task.id}`}>
                     <Pencil className="w-3.5 h-3.5" />
                   </Button>
@@ -257,6 +273,10 @@ export default function ManageTasks() {
           </div>
         )}
       </div>
+
+      {workflowTask && (
+        <TaskWorkflow task={workflowTask} onClose={() => setWorkflowTask(null)} />
+      )}
 
       {detailTask && (
         <TaskDetailPopup

@@ -3,10 +3,13 @@ import { api, buildUrl } from "@shared/routes";
 import { useAuth } from "@/lib/auth";
 
 export function useCompanies() {
+  const { token } = useAuth();
   return useQuery({
-    queryKey: ["/api/companies"],
+    queryKey: ["/api/companies", !!token],
     queryFn: async () => {
-      const res = await fetch(api.companies.list.path);
+      const headers: Record<string, string> = {};
+      if (token) headers["Authorization"] = `Bearer ${token}`;
+      const res = await fetch(api.companies.list.path, { headers });
       if (!res.ok) throw new Error("Failed to fetch companies");
       return res.json();
     },
@@ -98,6 +101,25 @@ export function useSuggestCompany() {
         phases: string[];
         roles: string[];
       }>;
+    },
+  });
+}
+
+export function useSimulateIncident() {
+  const queryClient = useQueryClient();
+  const { token } = useAuth();
+  return useMutation({
+    mutationFn: async (companyId: number) => {
+      const res = await fetch(`/api/companies/${companyId}/incident`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) throw new Error("Failed to simulate incident");
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/tasks"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/companies"] });
     },
   });
 }
